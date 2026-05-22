@@ -1,0 +1,69 @@
+name: project_flutter
+description: "A new Flutter project."
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.8.0
+
+dependencies:
+  page_transition: ^2.1.0
+  flutter:
+    sdk: flutter
+  flutter_markdown: ^0.7.3
+  flutter_math_fork: ^0.7.2
+  pdf: "3.10.8"
+  printing: ^5.12.0
+  docx_template: ^0.3.2
+  archive: ^3.4.10
+  # الحزم الأساسية
+  dio: ^5.9.2
+  shared_preferences: ^2.5.4
+
+  # اختيار الملفات والصور
+  file_picker: ^10.3.10
+  image_picker: ^1.2.1
+  path_provider: ^2.1.5
+  url_launcher: ^6.3.0
+  file_selector: ^1.1.0
+  flutter_widget_from_html_core: ^0.14.0
+  webview_flutter: ^4.7.0
+  # دعم اللغات
+  flutter_localizations:
+    sdk: flutter
+  intl: ^0.20.2
+
+  # إدارة الحالة
+  provider: ^6.1.1
+
+  cupertino_icons: ^1.0.8
+  window_manager: ^0.5.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  generate: true
+  uses-material-design: true
+
+  assets:
+    - assets/fonts/
+
+  fonts:
+    - family: Inter
+      fonts:
+        - asset: assets/fonts/Inter-Regular.ttf
+        - asset: assets/fonts/Inter-Bold.ttf
+          weight: 700
+
+    - family: NotoSansArabic
+      fonts:
+        - asset: assets/fonts/NotoSansArabic-Regular.ttf
+        - asset: assets/fonts/NotoSansArabic-Bold.ttf
+          weight: 700
+
+    - family: NotoSansMath
+      fonts:
+        - asset: assets/fonts/NotoSansMath-Regular.ttf
