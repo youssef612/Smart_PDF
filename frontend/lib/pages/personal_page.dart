@@ -1,6 +1,10 @@
 import 'dart:typed_data';
 import 'dart:convert';
 import 'package:flutter/material.dart';
+
+import 'package:flutter/services.dart';
+import '../utils/responsive.dart';
+
 import 'package:url_launcher/url_launcher.dart';
 import 'package:dio/dio.dart';
 import 'package:path_provider/path_provider.dart';
@@ -82,7 +86,6 @@ class _PersonalPageState extends State<PersonalPage>
 
   bool get isArabic => _selectedLanguage == 'arabic';
 
-  // دالة للحصول على صورة المستخدم
   ImageProvider? _getUserAvatar() {
     if (_user == null) return null;
 
@@ -102,75 +105,48 @@ class _PersonalPageState extends State<PersonalPage>
     return null;
   }
 
-  // حساب المدة منذ الانضمام
   String _getMemberSince() {
-    if (_user?['createdAt'] == null) {
+    if (_user?['createdAt'] == null)
       return isArabic ? 'تاريخ غير معروف' : 'Unknown date';
-    }
 
     try {
-      // ✅ تعامل مع صيغ مختلفة من التاريخ
-      DateTime joinDate;
-      String createdAtString = _user!['createdAt'].toString().trim();
-
-      // إذا كان يحتوي على 'Z' أو '+' أو '-' (timezone)
-      if (createdAtString.contains(RegExp(r'[Z+-]'))) {
-        joinDate = DateTime.parse(createdAtString).toLocal();
-      } else {
-        joinDate = DateTime.parse(createdAtString);
-      }
-
+      DateTime joinDate = DateTime.parse(_user!['createdAt']);
       final now = DateTime.now();
       final difference = now.difference(joinDate);
 
       if (difference.inDays > 365) {
         final years = (difference.inDays / 365).floor();
-        return isArabic
-            ? 'عضو منذ $years سنة'
-            : 'Member for $years year${years != 1 ? 's' : ''}';
+        return isArabic ? 'عضو منذ $years سنة' : 'Member for $years years';
       } else if (difference.inDays > 30) {
         final months = (difference.inDays / 30).floor();
-        return isArabic
-            ? 'عضو منذ $months شهر'
-            : 'Member for $months month${months != 1 ? 's' : ''}';
+        return isArabic ? 'عضو منذ $months شهر' : 'Member for $months months';
       } else if (difference.inDays > 0) {
         return isArabic
             ? 'عضو منذ ${difference.inDays} يوم'
-            : 'Member for ${difference.inDays} day${difference.inDays != 1 ? 's' : ''}';
-      } else if (difference.inHours > 0) {
+            : 'Member for ${difference.inDays} days';
+      } else {
         final hours = difference.inHours;
         return isArabic
             ? 'عضو منذ $hours ساعة'
-            : 'Member for $hours hour${hours != 1 ? 's' : ''}';
-      } else {
-        return isArabic ? 'عضو جديد' : 'New member';
+            : 'Member for $hours hours';
       }
     } catch (e) {
-      debugPrint('❌ Error parsing date: $_user["createdAt"], Error: $e');
       return isArabic ? 'عضو جديد' : 'New member';
     }
   }
-  // تنسيق التاريخ
+
   String _formatDate(String? dateString) {
     if (dateString == null) return isArabic ? 'غير محدد' : 'Not set';
     try {
-      DateTime date;
-      String cleanDate = dateString.toString().trim();
-
-      // ✅ تعامل مع timezone
-      if (cleanDate.contains(RegExp(r'[Z+-]'))) {
-        date = DateTime.parse(cleanDate).toLocal();
-      } else {
-        date = DateTime.parse(cleanDate);
-      }
-
-      final formatter = DateFormat(isArabic ? 'yyyy MMMM dd' : 'MMMM dd, yyyy');
+      DateTime date = DateTime.parse(dateString);
+      final formatter =
+          DateFormat(isArabic ? 'yyyy MMMM dd' : 'MMMM dd, yyyy');
       return formatter.format(date);
     } catch (e) {
-      debugPrint('❌ Error formatting date: $dateString, Error: $e');
       return dateString;
     }
   }
+
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
 
@@ -496,424 +472,447 @@ class _PersonalPageState extends State<PersonalPage>
     final joinDate = _formatDate(_user?['createdAt']);
 
     if (_isLoading) {
-      return Scaffold(
-        appBar: AppBar(
-          title: Text(isArabic ? 'ملفي الشخصي' : 'My Profile'),
-          backgroundColor: theme.cardColor,
-          elevation: 0,
-        ),
-        body: Center(
-          child: TweenAnimationBuilder(
-            tween: Tween<double>(begin: 0, end: 1),
-            duration: const Duration(milliseconds: 800),
-            builder: (context, double value, child) {
-              return Opacity(
-                opacity: value,
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const SizedBox(
-                      width: 50,
-                      height: 50,
-                      child: CircularProgressIndicator(strokeWidth: 3),
+      return CallbackShortcuts(
+        bindings: {
+          const SingleActivator(LogicalKeyboardKey.escape): () {
+            if (Navigator.canPop(context)) Navigator.pop(context);
+          },
+        },
+        child: Focus(
+          autofocus: true,
+          child: Scaffold(
+            appBar: AppBar(
+              title: Text(isArabic ? 'ملفي الشخصي' : 'My Profile'),
+              backgroundColor: theme.cardColor,
+              elevation: 0,
+            ),
+            body: Center(
+              child: TweenAnimationBuilder(
+                tween: Tween<double>(begin: 0, end: 1),
+                duration: const Duration(milliseconds: 800),
+                builder: (context, double value, child) {
+                  return Opacity(
+                    opacity: value,
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const SizedBox(
+                          width: 50,
+                          height: 50,
+                          child: CircularProgressIndicator(strokeWidth: 3),
+                        ),
+                        const SizedBox(height: 20),
+                        Text(
+                          isArabic ? 'جاري التحميل...' : 'Loading...',
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 20),
-                    Text(
-                      isArabic ? 'جاري التحميل...' : 'Loading...',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: Colors.grey[600],
+                  );
+                },
+              ),
+            ),
+          ), // <-- Scaffold
+        ), // <-- Focus
+      ); // <-- CallbackShortcuts
+    }
+
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.escape): () {
+          if (Navigator.canPop(context)) Navigator.pop(context);
+        },
+      },
+      child: Focus(
+        autofocus: true,
+        child: Scaffold(
+          backgroundColor: theme.scaffoldBackgroundColor,
+          appBar: AppBar(
+            title: Text(
+              isArabic ? 'ملفي الشخصي' : 'My Profile',
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+            elevation: 0,
+            backgroundColor: theme.cardColor,
+            foregroundColor: theme.textTheme.bodyLarge?.color,
+            iconTheme: theme.iconTheme,
+            centerTitle: false,
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.edit_rounded),
+                onPressed: () async {
+                  final result = await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => EditProfilePage(user: _user),
+                    ),
+                  );
+
+                  if (result != null && mounted) {
+                    if (result is Map && result['updated'] == true) {
+                      final updatedUserData = result['userData'];
+                      if (updatedUserData != null) {
+                        setState(() {
+                          _user = updatedUserData;
+                        });
+                        debugPrint(
+                            '✅ User updated from edit page: ${_user?['name']}');
+                      } else {
+                        await _refreshUserData();
+                      }
+
+                      await _loadUserFiles();
+
+                      _showSuccessSnackBar(isArabic
+                          ? 'تم تحديث الملف الشخصي'
+                          : 'Profile updated');
+                    }
+                  }
+                },
+                tooltip: isArabic ? 'تعديل الملف الشخصي' : 'Edit Profile',
+              ),
+            ],
+          ),
+          body: RefreshIndicator(
+            onRefresh: _loadUserFiles,
+            color: const Color(0xFF6366F1),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: Responsive.maxWidth(context)),
+                child: CustomScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  slivers: [
+                    // Header Section
+                    SliverToBoxAdapter(
+                      child: FadeTransition(
+                        opacity: _fadeAnimation,
+                        child: Container(
+                          width: double.infinity,
+                          decoration: const BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
+                            ),
+                            borderRadius: BorderRadius.only(
+                              bottomLeft: Radius.circular(40),
+                              bottomRight: Radius.circular(40),
+                            ),
+                          ),
+                          child: SafeArea(
+                            child: Padding(
+                              padding: const EdgeInsets.fromLTRB(24, 32, 24, 40),
+                              child: Column(
+                                children: [
+                                  // Profile Image
+                                  TweenAnimationBuilder(
+                                    tween: Tween<double>(begin: 0, end: 1),
+                                    duration: const Duration(milliseconds: 600),
+                                    builder: (context, double value, child) {
+                                      return Transform.scale(
+                                        scale: value,
+                                        child: Container(
+                                          width: 140,
+                                          height: 140,
+                                          decoration: BoxDecoration(
+                                            gradient: avatarImage == null
+                                                ? LinearGradient(
+                                                    begin: Alignment.topLeft,
+                                                    end: Alignment.bottomRight,
+                                                    colors: [
+                                                      _getColorFromName(_user?['name']),
+                                                      _getColorFromName(_user?['name'])
+                                                          .withBlue(200),
+                                                    ],
+                                                  )
+                                                : null,
+                                            shape: BoxShape.circle,
+                                            boxShadow: [
+                                              BoxShadow(
+                                                color: Colors.black.withOpacity(0.2),
+                                                blurRadius: 20,
+                                                offset: const Offset(0, 10),
+                                              ),
+                                              BoxShadow(
+                                                color: const Color(0xFF6366F1)
+                                                    .withOpacity(0.3),
+                                                blurRadius: 30,
+                                                offset: const Offset(0, 5),
+                                              ),
+                                            ],
+                                            border: Border.all(
+                                              color: Colors.white,
+                                              width: 4,
+                                            ),
+                                            image: avatarImage != null
+                                                ? DecorationImage(
+                                                    image: avatarImage,
+                                                    fit: BoxFit.cover,
+                                                  )
+                                                : null,
+                                          ),
+                                          child: avatarImage == null
+                                              ? Center(
+                                                  child: Text(
+                                                    _getInitials(_user?['name']),
+                                                    style: const TextStyle(
+                                                      color: Colors.white,
+                                                      fontSize: 48,
+                                                      fontWeight: FontWeight.bold,
+                                                    ),
+                                                  ),
+                                                )
+                                              : null,
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                  const SizedBox(height: 24),
+
+                                  // Name
+                                  Text(
+                                    _user?['name'] ?? (isArabic ? 'مستخدم' : 'User'),
+                                    style: const TextStyle(
+                                      fontSize: 28,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.white,
+                                      letterSpacing: -0.5,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 16, vertical: 6),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withOpacity(0.2),
+                                      borderRadius: BorderRadius.circular(20),
+                                      border: Border.all(
+                                        color: Colors.white.withOpacity(0.3),
+                                      ),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const Icon(
+                                          Icons.verified_rounded,
+                                          color: Colors.white,
+                                          size: 16,
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Text(
+                                          isArabic
+                                              ? 'عضو مميز • ${_userFiles.length} مستند'
+                                              : 'Premium Member • ${_userFiles.length} document${_userFiles.length != 1 ? 's' : ''}',
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(height: 20),
+
+                                  // Member Since Card
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 16, vertical: 12),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withOpacity(0.15),
+                                      borderRadius: BorderRadius.circular(20),
+                                      border: Border.all(
+                                        color: Colors.white.withOpacity(0.2),
+                                      ),
+                                    ),
+                                    child: Row(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        const Icon(
+                                          Icons.calendar_today_rounded,
+                                          color: Colors.white,
+                                          size: 18,
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          memberSince,
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Container(
+                                          width: 4,
+                                          height: 4,
+                                          decoration: const BoxDecoration(
+                                            color: Colors.white,
+                                            shape: BoxShape.circle,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        const Icon(
+                                          Icons.schedule_rounded,
+                                          color: Colors.white,
+                                          size: 18,
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          joinDate,
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+
+                    // Contact Information Section
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 24),
+                        child: SlideTransition(
+                          position: Tween<Offset>(
+                            begin: const Offset(0, 0.1),
+                            end: Offset.zero,
+                          ).animate(CurvedAnimation(
+                            parent: _animationController,
+                            curve:
+                                const Interval(0.2, 0.5, curve: Curves.easeOut),
+                          )),
+                          child: Container(
+                            margin: const EdgeInsets.only(bottom: 16),
+                            padding: const EdgeInsets.all(20),
+                            decoration: BoxDecoration(
+                              color: theme.cardColor,
+                              borderRadius: BorderRadius.circular(24),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.05),
+                                  blurRadius: 10,
+                                  offset: const Offset(0, 4),
+                                ),
+                              ],
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.all(10),
+                                      decoration: BoxDecoration(
+                                        gradient: const LinearGradient(
+                                          colors: [
+                                            Color(0xFF6366F1),
+                                            Color(0xFF8B5CF6)
+                                          ],
+                                        ),
+                                        borderRadius: BorderRadius.circular(16),
+                                      ),
+                                      child: const Icon(
+                                        Icons.contact_mail_rounded,
+                                        color: Colors.white,
+                                        size: 20,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Text(
+                                      isArabic
+                                          ? 'معلومات الاتصال'
+                                          : 'Contact Information',
+                                      style: theme.textTheme.titleMedium?.copyWith(
+                                        fontWeight: FontWeight.bold,
+                                        letterSpacing: -0.5,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 20),
+                                _buildInfoRow(
+                                  theme,
+                                  Icons.email_rounded,
+                                  isArabic ? 'البريد الإلكتروني' : 'Email Address',
+                                  _user?['email'] ?? '',
+                                  const Color(0xFF6366F1),
+                                ),
+                                const SizedBox(height: 16),
+                                _buildInfoRow(
+                                  theme,
+                                  Icons.calendar_today_rounded,
+                                  isArabic ? 'تاريخ الانضمام' : 'Join Date',
+                                  joinDate,
+                                  const Color(0xFF10B981),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+
+                    // Delete Account Section
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 24),
+                        child: Container(
+                          margin: const EdgeInsets.only(bottom: 16),
+                          decoration: BoxDecoration(
+                            color: theme.cardColor,
+                            borderRadius: BorderRadius.circular(24),
+                            border: Border.all(color: Colors.red.withOpacity(0.2)),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.05),
+                                blurRadius: 10,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: ListTile(
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                            leading: Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: Colors.red.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: const Icon(Icons.delete_forever_rounded, color: Colors.red, size: 22),
+                            ),
+                            title: Text(
+                              isArabic ? "حذف الحساب" : "Delete Account",
+                              style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
+                            ),
+                            subtitle: Text(
+                              isArabic ? "سيتم حذف كل بياناتك نهائياً" : "All your data will be permanently deleted",
+                              style: TextStyle(color: Colors.red.withOpacity(0.7), fontSize: 12),
+                            ),
+                            trailing: const Icon(Icons.arrow_forward_ios_rounded, color: Colors.red, size: 16),
+                            onTap: _deleteAccount,
+                          ),
+                        ),
                       ),
                     ),
                   ],
                 ),
-              );
-            },
+              ),
+            ),
           ),
-        ),
-      );
-    }
-
-    return Scaffold(
-      backgroundColor: theme.scaffoldBackgroundColor,
-      appBar: AppBar(
-        title: Text(
-          isArabic ? 'ملفي الشخصي' : 'My Profile',
-          style: const TextStyle(fontWeight: FontWeight.w600),
-        ),
-        elevation: 0,
-        backgroundColor: theme.cardColor,
-        foregroundColor: theme.textTheme.bodyLarge?.color,
-        iconTheme: theme.iconTheme,
-        centerTitle: false,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.edit_rounded),
-            onPressed: () async {
-              final result = await Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => EditProfilePage(user: _user),
-                ),
-              );
-
-              if (result != null && mounted) {
-                if (result is Map && result['updated'] == true) {
-                  final updatedUserData = result['userData'];
-                  if (updatedUserData != null) {
-                    setState(() {
-                      _user = updatedUserData;
-                    });
-                    debugPrint(
-                        '✅ User updated from edit page: ${_user?['name']}');
-                  } else {
-                    await _refreshUserData();
-                  }
-
-                  await _loadUserFiles();
-
-                  _showSuccessSnackBar(isArabic
-                      ? 'تم تحديث الملف الشخصي'
-                      : 'Profile updated');
-                }
-              }
-            },
-            tooltip: isArabic ? 'تعديل الملف الشخصي' : 'Edit Profile',
-          ),
-        ],
-      ),
-      body: RefreshIndicator(
-        onRefresh: _loadUserFiles,
-        color: const Color(0xFF6366F1),
-        child: CustomScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          slivers: [
-            // Header Section
-            SliverToBoxAdapter(
-              child: FadeTransition(
-                opacity: _fadeAnimation,
-                child: Container(
-                  width: double.infinity,
-                  decoration: const BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
-                    ),
-                    borderRadius: BorderRadius.only(
-                      bottomLeft: Radius.circular(40),
-                      bottomRight: Radius.circular(40),
-                    ),
-                  ),
-                  child: SafeArea(
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(24, 32, 24, 40),
-                      child: Column(
-                        children: [
-                          // Profile Image
-                          TweenAnimationBuilder(
-                            tween: Tween<double>(begin: 0, end: 1),
-                            duration: const Duration(milliseconds: 600),
-                            builder: (context, double value, child) {
-                              return Transform.scale(
-                                scale: value,
-                                child: Container(
-                                  width: 140,
-                                  height: 140,
-                                  decoration: BoxDecoration(
-                                    gradient: avatarImage == null
-                                        ? LinearGradient(
-                                            begin: Alignment.topLeft,
-                                            end: Alignment.bottomRight,
-                                            colors: [
-                                              _getColorFromName(_user?['name']),
-                                              _getColorFromName(_user?['name'])
-                                                  .withBlue(200),
-                                            ],
-                                          )
-                                        : null,
-                                    shape: BoxShape.circle,
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: Colors.black.withOpacity(0.2),
-                                        blurRadius: 20,
-                                        offset: const Offset(0, 10),
-                                      ),
-                                      BoxShadow(
-                                        color: const Color(0xFF6366F1)
-                                            .withOpacity(0.3),
-                                        blurRadius: 30,
-                                        offset: const Offset(0, 5),
-                                      ),
-                                    ],
-                                    border: Border.all(
-                                      color: Colors.white,
-                                      width: 4,
-                                    ),
-                                    image: avatarImage != null
-                                        ? DecorationImage(
-                                            image: avatarImage,
-                                            fit: BoxFit.cover,
-                                          )
-                                        : null,
-                                  ),
-                                  child: avatarImage == null
-                                      ? Center(
-                                          child: Text(
-                                            _getInitials(_user?['name']),
-                                            style: const TextStyle(
-                                              color: Colors.white,
-                                              fontSize: 48,
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                          ),
-                                        )
-                                      : null,
-                                ),
-                              );
-                            },
-                          ),
-                          const SizedBox(height: 24),
-
-                          // Name
-                          Text(
-                            _user?['name'] ?? (isArabic ? 'مستخدم' : 'User'),
-                            style: const TextStyle(
-                              fontSize: 28,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                              letterSpacing: -0.5,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 16, vertical: 6),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.2),
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(
-                                color: Colors.white.withOpacity(0.3),
-                              ),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(
-                                  Icons.verified_rounded,
-                                  color: Colors.white,
-                                  size: 16,
-                                ),
-                                const SizedBox(width: 6),
-                                Text(
-                                  isArabic
-                                      ? 'عضو مميز • ${_stats['total'] ?? 0} مستند'  // ✅ استخدم _stats
-                                      : 'Premium Member • ${_stats['total'] ?? 0} document${(_stats['total'] ?? 0) != 1 ? 's' : ''}',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 20),
-
-                          // Member Since Card
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 16, vertical: 12),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.15),
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(
-                                color: Colors.white.withOpacity(0.2),
-                              ),
-                            ),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                const Icon(
-                                  Icons.calendar_today_rounded,
-                                  color: Colors.white,
-                                  size: 18,
-                                ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  memberSince,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Container(
-                                  width: 4,
-                                  height: 4,
-                                  decoration: const BoxDecoration(
-                                    color: Colors.white,
-                                    shape: BoxShape.circle,
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                const Icon(
-                                  Icons.schedule_rounded,
-                                  color: Colors.white,
-                                  size: 18,
-                                ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  joinDate,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-
-            // Contact Information Section
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: SlideTransition(
-                  position: Tween<Offset>(
-                    begin: const Offset(0, 0.1),
-                    end: Offset.zero,
-                  ).animate(CurvedAnimation(
-                    parent: _animationController,
-                    curve:
-                        const Interval(0.2, 0.5, curve: Curves.easeOut),
-                  )),
-                  child: Container(
-                    margin: const EdgeInsets.only(bottom: 16),
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      color: theme.cardColor,
-                      borderRadius: BorderRadius.circular(24),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.05),
-                          blurRadius: 10,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(10),
-                              decoration: BoxDecoration(
-                                gradient: const LinearGradient(
-                                  colors: [
-                                    Color(0xFF6366F1),
-                                    Color(0xFF8B5CF6)
-                                  ],
-                                ),
-                                borderRadius: BorderRadius.circular(16),
-                              ),
-                              child: const Icon(
-                                Icons.contact_mail_rounded,
-                                color: Colors.white,
-                                size: 20,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Text(
-                              isArabic
-                                  ? 'معلومات الاتصال'
-                                  : 'Contact Information',
-                              style: theme.textTheme.titleMedium?.copyWith(
-                                fontWeight: FontWeight.bold,
-                                letterSpacing: -0.5,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 20),
-                        _buildInfoRow(
-                          theme,
-                          Icons.email_rounded,
-                          isArabic ? 'البريد الإلكتروني' : 'Email Address',
-                          _user?['email'] ?? '',
-                          const Color(0xFF6366F1),
-                        ),
-                        const SizedBox(height: 16),
-                        _buildInfoRow(
-                          theme,
-                          Icons.calendar_today_rounded,
-                          isArabic ? 'تاريخ الانضمام' : 'Join Date',
-                          joinDate,
-                          const Color(0xFF10B981),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-
-            // Delete Account Section
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: Container(
-                  margin: const EdgeInsets.only(bottom: 16),
-                  decoration: BoxDecoration(
-                    color: theme.cardColor,
-                    borderRadius: BorderRadius.circular(24),
-                    border: Border.all(color: Colors.red.withOpacity(0.2)),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.05),
-                        blurRadius: 10,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: ListTile(
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                    leading: Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: Colors.red.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Icon(Icons.delete_forever_rounded, color: Colors.red, size: 22),
-                    ),
-                    title: Text(
-                      isArabic ? "حذف الحساب" : "Delete Account",
-                      style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
-                    ),
-                    subtitle: Text(
-                      isArabic ? "سيتم حذف كل بياناتك نهائياً" : "All your data will be permanently deleted",
-                      style: TextStyle(color: Colors.red.withOpacity(0.7), fontSize: 12),
-                    ),
-                    trailing: const Icon(Icons.arrow_forward_ios_rounded, color: Colors.red, size: 16),
-                    onTap: _deleteAccount,
-                  ),
-                ),
-              ),
-            ),
-
-
-          ],
-        ),
-      ),
-    );
+        ), // <-- Scaffold
+      ), // <-- Focus
+    ); // <-- CallbackShortcuts
   }
 
   Widget _buildStatItem(ThemeData theme, String title, String value,

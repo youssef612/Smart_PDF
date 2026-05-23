@@ -1,6 +1,8 @@
 import 'page_transition.dart';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import '../utils/responsive.dart';
+
 import 'package:project_flutter/services/auth_service.dart';
 import 'home_page.dart';
 import 'sign_in_page.dart';

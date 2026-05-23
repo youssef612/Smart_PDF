@@ -15,6 +15,10 @@ static Future<void> add(Map<String, dynamic> item) async {
     // ده بيضمن إن الملف مربوط فعلاً بالداتا بيز
     String uniqueId = item['file_id']?.toString() ?? DateTime.now().millisecondsSinceEpoch.toString();
     item['id'] = "${uniqueId}_${item['type']}"; // مثلاً 55_summary
+
+    // امنعي التكرار: لو موجود قبل كده امسحيه وحطي الجديد (تحديث)
+    list.removeWhere((e) => e['id'] == item['id']);
+    
     list.add(item);
     await prefs.setString(key, jsonEncode(list));
 }

@@ -1,5 +1,9 @@
 // lib/pages/questions_page.dart
 import 'package:flutter/material.dart';
+
+import 'package:flutter/services.dart';
+import '../utils/responsive.dart';
+
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'widgets/math_markdown.dart';
 import 'widgets/pdf_export.dart';
@@ -263,23 +267,9 @@ class QuestionsPage extends StatefulWidget {
   final String? fileName;
   final String? fileId;
   final List?   questions;
-  final int     pageCount;
-  final String? questionType;  // ✅ أضف
-  final String? difficulty;
-  final int?    fromPage;
-  final int?    toPage;
 
-  const QuestionsPage({
-    Key? key,
-    this.fileName,
-    this.fileId,
-    this.questions,
-    this.pageCount = 0,
-    this.questionType, // ✅ أضف
-    this.difficulty,
-    this.fromPage,
-    this.toPage,
-  }) : super(key: key);
+  const QuestionsPage({Key? key, this.fileName, this.fileId, this.questions})
+      : super(key: key);
 
   @override
   State<QuestionsPage> createState() => _QuestionsPageState();
@@ -290,13 +280,11 @@ class _QuestionsPageState extends State<QuestionsPage>
   String _selectedQuestionType = 'multiple';
   String _selectedDifficulty   = 'medium';
   int    _questionCount        = 5;
+
   static const int _maxQuestions = 50;
 
   bool _isGenerating = false;
   List<Map<String, String>> _generatedQuestions = [];
-  int? _selectedFromPage;
-  int? _selectedToPage;
-  int _totalPages = 0;
   late String _currentLanguage;
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
@@ -329,37 +317,11 @@ class _QuestionsPageState extends State<QuestionsPage>
   @override
   void initState() {
     super.initState();
-
-    // ── صفحات ──
-    _totalPages = widget.pageCount;
-
-    // ── page range محفوظة من history ──
-    if (widget.fromPage != null) _selectedFromPage = widget.fromPage;
-    if (widget.toPage   != null) _selectedToPage   = widget.toPage;
-
-    // ── بيانات محفوظة ──
     if (widget.questions != null && widget.questions!.isNotEmpty) {
       _generatedQuestions = List<Map<String, String>>.from(
         widget.questions!.map((item) => Map<String, String>.from(item)),
       );
-      _questionCount = _generatedQuestions.length;
-
-      // ✅ خد question_type من widget أولاً (جاي من history صح)
-      // لو مش موجود → unmap اللي جوه الـ data
-      _selectedQuestionType = widget.questionType
-          ?? _unmapType(_generatedQuestions.first['type'] ?? 'multiple');
-
-      // ✅ خد difficulty من widget أولاً
-      _selectedDifficulty = widget.difficulty
-          ?? _generatedQuestions.first['difficulty']
-          ?? 'medium';
-    } else {
-      // مفيش بيانات محفوظة → خد من widget لو موجود
-      if (widget.questionType != null) _selectedQuestionType = widget.questionType!;
-      if (widget.difficulty   != null) _selectedDifficulty   = widget.difficulty!;
     }
-
-    // ── animations ──
     _animationController = AnimationController(
       duration: const Duration(milliseconds: 800),
       vsync: this,
@@ -375,145 +337,6 @@ class _QuestionsPageState extends State<QuestionsPage>
       curve: Curves.easeOutCubic,
     ));
     _animationController.forward();
-  }
-
-// ✅ helper لتحويل الـ mapped type لـ short form
-  String _unmapType(String mapped) {
-    const reverseMap = {
-      'multiple_choice': 'multiple',
-      'true_false':      'truefalse',
-      'short_answer':    'short',
-      'fill_blank':      'fill',
-      'case_study':      'casestudy',
-    };
-    return reverseMap[mapped] ?? mapped;
-  }
-
-  Future<void> _showPageRangeDialog() async {
-    int fromPage = _selectedFromPage ?? 1;
-    int toPage   = _selectedToPage ?? (_totalPages > 0 ? _totalPages : 1);
-
-    final result = await showDialog<Map<String, int>>(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setStateDialog) => AlertDialog(
-          title: Text(isArabic ? 'اختر نطاق الصفحات' : 'Select Page Range'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                _totalPages > 0
-                    ? '${isArabic ? 'إجمالي الصفحات' : 'Total pages'}: $_totalPages'
-                    : (isArabic ? 'تعذر تحديد عدد الصفحات' : 'Page count unavailable'),
-                style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  color: _totalPages > 0 ? Color(0xFF6366F1) : Colors.orange,
-                ),
-              ),
-              const SizedBox(height: 20),
-
-              // ── من الصفحة ──
-              Text(isArabic ? 'من الصفحة' : 'From Page',
-                  style: const TextStyle(fontWeight: FontWeight.w600)),
-              const SizedBox(height: 8),
-              _buildPageCounter(
-                value: fromPage,
-                min: 1,
-                max: toPage,
-                onDecrement: () => setStateDialog(() {
-                  if (fromPage > 1) fromPage--;
-                }),
-                onIncrement: () => setStateDialog(() {
-                  if (fromPage < toPage) fromPage++;
-                }),
-              ),
-
-              const SizedBox(height: 16),
-
-              // ── إلى الصفحة ──
-              Text(isArabic ? 'إلى الصفحة' : 'To Page',
-                  style: const TextStyle(fontWeight: FontWeight.w600)),
-              const SizedBox(height: 8),
-              _buildPageCounter(
-                value: toPage,
-                min: fromPage,
-                max: _totalPages > 0 ? _totalPages : 9999,
-                onDecrement: () => setStateDialog(() {
-                  if (toPage > fromPage) toPage--;
-                }),
-                onIncrement: () => setStateDialog(() {
-                  if (_totalPages == 0 || toPage < _totalPages) toPage++;
-                }),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text(isArabic ? 'إلغاء' : 'Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () => Navigator.pop(context, {'from': fromPage, 'to': toPage}),
-              child: Text(isArabic ? 'توليد' : 'Generate'),
-            ),
-          ],
-        ),
-      ),
-    );
-
-    if (result != null) {
-      setState(() {
-        _selectedFromPage = result['from'];
-        _selectedToPage   = result['to'];
-      });
-      await _generateQuestions();
-    }
-  }
-
-// ── Helper Widget ──
-  Widget _buildPageCounter({
-    required int value,
-    required int min,
-    required int max,
-    required VoidCallback onDecrement,
-    required VoidCallback onIncrement,
-  }) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        IconButton(
-          onPressed: value > min ? onDecrement : null,
-          icon: const Icon(Icons.remove_circle_outline_rounded),
-          color: const Color(0xFF6366F1),
-          iconSize: 28,
-        ),
-        Container(
-          width: 70,
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
-            ),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Text(
-            '$value',
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.bold,
-              fontSize: 20,
-            ),
-          ),
-        ),
-        IconButton(
-          onPressed: (_totalPages == 0 || value < max) ? onIncrement : null,
-          icon: const Icon(Icons.add_circle_outline_rounded),
-          color: const Color(0xFF6366F1),
-          iconSize: 28,
-        ),
-      ],
-    );
   }
 
   @override
@@ -770,11 +593,8 @@ class _QuestionsPageState extends State<QuestionsPage>
     return map[type] ?? 'multiple_choice';
   }
 
-  Future<String?> _fetchQuestionsWithRetry({
-    required int maxRetries,
-    int? fromPage,
-    int? toPage,
-  })async {
+  Future<String?> _fetchQuestionsWithRetry(
+      {required int maxRetries}) async {
     int attempt = 0;
     while (attempt < maxRetries) {
       try {
@@ -784,8 +604,6 @@ class _QuestionsPageState extends State<QuestionsPage>
             'type':             mapType(_selectedQuestionType),
             'difficulty':       _selectedDifficulty.toLowerCase(),
             'count':            _questionCount,
-            'from_page': fromPage,    // ← أضف دي
-            'to_page': toPage,
             'force_regenerate': true,
             'seed':             DateTime.now().millisecondsSinceEpoch,
           },
@@ -821,11 +639,8 @@ class _QuestionsPageState extends State<QuestionsPage>
     });
 
     try {
-      final rawQuestions = await _fetchQuestionsWithRetry(
-        maxRetries: 3,
-        fromPage: _selectedFromPage,
-        toPage: _selectedToPage,
-      );
+      final rawQuestions =
+      await _fetchQuestionsWithRetry(maxRetries: 3);
 
       if (!mounted) return;
 
@@ -858,9 +673,6 @@ class _QuestionsPageState extends State<QuestionsPage>
           'difficulty':    _selectedDifficulty,
           'count':         parsed.length,
           'data':          parsed,
-          'from_page':     _selectedFromPage,  // ✅ أضف
-          'to_page':       _selectedToPage,
-          'page_count':    _totalPages,
           'date':          DateTime.now().toIso8601String(),
         });
       }
@@ -1096,7 +908,10 @@ class _QuestionsPageState extends State<QuestionsPage>
             ),
           ],
         ),
-        body: SingleChildScrollView(
+        body: Center(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: Responsive.maxWidth(context)),
+          child: SingleChildScrollView(
           physics: const BouncingScrollPhysics(),
           child: Column(
             children: [
@@ -1240,7 +1055,7 @@ class _QuestionsPageState extends State<QuestionsPage>
                       ),
                       const SizedBox(height: 12),
                       GestureDetector(
-                        onTap: _isGenerating ? null : _showTypeDropdown,
+                        onTap: _showTypeDropdown,
                         child: Container(
                           padding: const EdgeInsets.symmetric(
                               horizontal: 16, vertical: 14),
@@ -1311,11 +1126,8 @@ class _QuestionsPageState extends State<QuestionsPage>
                             value: d['value'] as String,
                             groupValue: _selectedDifficulty,
                             color: d['color'] as Color,
-                            onSelected: _isGenerating
-                                ? (_) {}
-                                : (val) => setState(
-                                  () => _selectedDifficulty = val,
-                            ),
+                            onSelected: (val) => setState(
+                                    () => _selectedDifficulty = val),
                           );
                         }).toList(),
                       ),
@@ -1333,36 +1145,33 @@ class _QuestionsPageState extends State<QuestionsPage>
                           letterSpacing: -0.3,
                         ),
                       ),
-                      const SizedBox(height: 28),
+                      const SizedBox(height: 16),
                       Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
+                        mainAxisAlignment:
+                        MainAxisAlignment.center,
                         children: [
                           _buildCounterBtn(
                             icon: Icons.remove_rounded,
                             onTap: () {
-                              if (_isGenerating) return;
-
-                              if (_questionCount > 1) {
+                              if (_questionCount > 1)
                                 setState(() => _questionCount--);
-                              }
                             },
                             enabled: _questionCount > 1,
                             theme: theme,
                           ),
-
                           const SizedBox(width: 20),
-
                           Container(
                             width: 80,
-                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            padding: const EdgeInsets.symmetric(
+                                vertical: 10),
                             decoration: BoxDecoration(
                               gradient: const LinearGradient(
-                                colors: [
-                                  Color(0xFF6366F1),
-                                  Color(0xFF8B5CF6),
-                                ],
-                              ),
-                              borderRadius: BorderRadius.circular(16),
+                                  colors: [
+                                    Color(0xFF6366F1),
+                                    Color(0xFF8B5CF6),
+                                  ]),
+                              borderRadius:
+                              BorderRadius.circular(16),
                             ),
                             child: Text(
                               '$_questionCount',
@@ -1374,26 +1183,34 @@ class _QuestionsPageState extends State<QuestionsPage>
                               ),
                             ),
                           ),
-
                           const SizedBox(width: 20),
-
                           _buildCounterBtn(
                             icon: Icons.add_rounded,
                             onTap: () {
-                              if (_isGenerating) return;
-
-                              if (_questionCount < _maxQuestions) {
+                              if (_questionCount < _maxQuestions)
                                 setState(() => _questionCount++);
-                              }
                             },
-                            enabled: _questionCount < _maxQuestions,
+                            enabled:
+                            _questionCount < _maxQuestions,
                             theme: theme,
                           ),
                         ],
                       ),
+                      if (_questionCount >= _maxQuestions)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Center(
+                            child: Text(
+                              isArabic
+                                  ? 'الحد الأقصى $_maxQuestions سؤال'
+                                  : 'Maximum $_maxQuestions questions',
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey[500]),
+                            ),
+                          ),
+                        ),
 
-
-                      const SizedBox(height: 32),
                       const SizedBox(height: 32),
 
                       // Generate Button
@@ -1402,9 +1219,7 @@ class _QuestionsPageState extends State<QuestionsPage>
                         child: GestureDetector(
                           onTap: _isGenerating
                               ? null
-                              : () async {
-                            await _showPageRangeDialog();
-                          },
+                              : _generateQuestions,
                           child: AnimatedContainer(
                             duration:
                             const Duration(milliseconds: 300),
@@ -1669,6 +1484,8 @@ class _QuestionsPageState extends State<QuestionsPage>
           ),
         ),
       ),
+          ),
+        ),
     );
   }
 

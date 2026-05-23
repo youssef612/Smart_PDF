@@ -1,9 +1,12 @@
+import 'page_transition.dart';
 import 'package:flutter/material.dart';
+
+import '../utils/responsive.dart';
+
 import 'sign_up_page.dart';
 import 'forgot_password_page.dart';
 import 'home_page.dart';
 import '../services/auth_service.dart';
-import 'page_transition.dart';  // ✅ أضف هذا
 
 class SignInPage extends StatefulWidget {
   const SignInPage({Key? key}) : super(key: key);
@@ -230,9 +233,12 @@ class _SignInPageState extends State<SignInPage>
               ),
 
               /// ===== Form =====
-              Padding(
-                padding: const EdgeInsets.all(24.0),
-                child: SlideTransition(
+              Center(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(maxWidth: Responsive.maxWidth(context)),
+                  child: Padding(
+                    padding: const EdgeInsets.all(24.0),
+                    child: SlideTransition(
                   position: _slideAnimation,
                   child: Form(
                     key: _formKey,
@@ -497,6 +503,8 @@ class _SignInPageState extends State<SignInPage>
                   ),
                 ),
               ),
+            ),
+            ),
             ],
           ),
         ),

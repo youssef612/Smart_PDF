@@ -1,5 +1,7 @@
 // pages/explanation_page.dart
 import 'package:flutter/material.dart';
+import '../utils/responsive.dart';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import '../services/api_service.dart';
@@ -371,7 +373,15 @@ class _ExplanationPageState extends State<ExplanationPage>
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return Scaffold(
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.escape): () {
+          if (Navigator.canPop(context)) Navigator.pop(context);
+        },
+      },
+      child: Focus(
+        autofocus: true,
+        child: Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
         title: Text(
@@ -397,11 +407,14 @@ class _ExplanationPageState extends State<ExplanationPage>
           ],
         ],
       ),
-      body: SingleChildScrollView(
-        physics: const BouncingScrollPhysics(),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+      body: Center(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: Responsive.maxWidth(context)),
+          child: SingleChildScrollView(
+            physics: const BouncingScrollPhysics(),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
             // ── Header ──
             FadeTransition(
               opacity: _fadeAnimation,
@@ -650,6 +663,10 @@ class _ExplanationPageState extends State<ExplanationPage>
 
             const SizedBox(height: 24),
           ],
+        ),
+      ),
+  ),
+    ),
         ),
       ),
     );

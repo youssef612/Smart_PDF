@@ -48,6 +48,7 @@ static void my_application_activate(GApplication* application) {
   }
 
   gtk_window_set_default_size(window, 1280, 720);
+  gtk_widget_set_size_request(GTK_WIDGET(window), 800, 600);
   gtk_window_set_icon_from_file(window, "/home/hany/Downloads/Last_Ham/final/frontend/linux/runner/resources/SmartPDF.png", nullptr);
   gtk_widget_show(GTK_WIDGET(window));
 

@@ -12,7 +12,7 @@ class ApiService {
   }
 
   late Dio dio;
-  static const String baseUrl = "https://catapult-pang-rival.ngrok-free.dev/api";
+  static const String baseUrl = "https://grant-aplitic-dhooly.ngrok-free.dev/api";
   bool _initialized = false;
   bool _isRefreshing = false;
 
@@ -22,7 +22,7 @@ class ApiService {
 
     dio = Dio(BaseOptions(
       baseUrl: baseUrl,
-      connectTimeout: const Duration(minutes: 5),
+      connectTimeout: const Duration(minutes: 15),
       receiveTimeout: const Duration(hours: 24),
       headers: {
         'Accept': 'application/json',

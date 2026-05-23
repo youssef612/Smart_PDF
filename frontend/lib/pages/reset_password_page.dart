@@ -1,5 +1,7 @@
 import 'page_transition.dart';
 import 'package:flutter/material.dart';
+import '../utils/responsive.dart';
+
 import 'package:project_flutter/services/auth_service.dart';
 import 'sign_in_page.dart';
 
@@ -27,7 +29,6 @@ class _ResetPasswordPageState extends State<ResetPasswordPage>
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
   String? _errorMessage;
-  bool _submitted = false; // tracks if user attempted submit
   late String _currentLanguage;
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
@@ -45,16 +46,11 @@ class _ResetPasswordPageState extends State<ResetPasswordPage>
       CurvedAnimation(parent: _animationController, curve: Curves.easeOut),
     );
 
-    _slideAnimation =
-        Tween<Offset>(begin: const Offset(0, 0.2), end: Offset.zero).animate(
-          CurvedAnimation(parent: _animationController, curve: Curves.easeOutCubic),
-        );
+    _slideAnimation = Tween<Offset>(begin: const Offset(0, 0.2), end: Offset.zero).animate(
+      CurvedAnimation(parent: _animationController, curve: Curves.easeOutCubic),
+    );
 
     _animationController.forward();
-
-    // Rebuild on every keystroke so requirements update live
-    _passwordController.addListener(() => setState(() {}));
-    _confirmPasswordController.addListener(() => setState(() {}));
   }
 
   @override
@@ -73,35 +69,22 @@ class _ResetPasswordPageState extends State<ResetPasswordPage>
 
   bool get isArabic => _currentLanguage == 'ar';
 
-  // ── requirement helpers ──────────────────────────────────────────────────
-  bool get _lengthOk => _passwordController.text.length >= 8;
-  bool get _matchOk =>
-      _passwordController.text.isNotEmpty &&
-          _passwordController.text == _confirmPasswordController.text;
-
   Future<void> _resetPassword() async {
-    setState(() => _submitted = true);
-
     final password = _passwordController.text.trim();
     final confirmPassword = _confirmPasswordController.text.trim();
 
     if (password.isEmpty) {
-      setState(() => _errorMessage =
-      isArabic ? 'كلمة المرور مطلوبة' : 'Password is required');
+      setState(() => _errorMessage = isArabic ? 'كلمة المرور مطلوبة' : 'Password is required');
       return;
     }
 
-    if (!_lengthOk) {
-      setState(() => _errorMessage = isArabic
-          ? 'كلمة المرور يجب أن تكون 8 أحرف على الأقل'
-          : 'Password must be at least 8 characters');
+    if (password.length < 6) {
+      setState(() => _errorMessage = isArabic ? 'كلمة المرور يجب أن تكون 6 أحرف على الأقل' : 'Password must be at least 6 characters');
       return;
     }
 
-    if (!_matchOk) {
-      setState(() => _errorMessage = isArabic
-          ? 'كلمة المرور وتأكيدها غير متطابقين'
-          : 'Passwords do not match');
+    if (password != confirmPassword) {
+      setState(() => _errorMessage = isArabic ? 'كلمة المرور غير متطابقة' : 'Passwords do not match');
       return;
     }
 
@@ -119,13 +102,12 @@ class _ResetPasswordPageState extends State<ResetPasswordPage>
       );
 
       if (response['success'] == true) {
-        if (mounted) _showSuccessDialog();
+        if (mounted) {
+          _showSuccessDialog();
+        }
       } else {
         setState(() {
-          _errorMessage = response['message'] ??
-              (isArabic
-                  ? 'فشل إعادة تعيين كلمة المرور'
-                  : 'Failed to reset password');
+          _errorMessage = response['message'] ?? (isArabic ? 'فشل إعادة تعيين كلمة المرور' : 'Failed to reset password');
         });
       }
     } catch (e) {
@@ -135,7 +117,9 @@ class _ResetPasswordPageState extends State<ResetPasswordPage>
         });
       }
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -161,8 +145,8 @@ class _ResetPasswordPageState extends State<ResetPasswordPage>
                     children: [
                       Container(
                         padding: const EdgeInsets.all(16),
-                        decoration: const BoxDecoration(
-                          gradient: LinearGradient(
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
                             colors: [Color(0xFF10B981), Color(0xFF34D399)],
                           ),
                           shape: BoxShape.circle,
@@ -175,14 +159,11 @@ class _ResetPasswordPageState extends State<ResetPasswordPage>
                       ),
                       const SizedBox(height: 20),
                       Text(
-                        isArabic
-                            ? 'تم إعادة تعيين كلمة المرور!'
-                            : 'Password Reset Successfully!',
+                        isArabic ? 'تم إعادة تعيين كلمة المرور!' : 'Password Reset Successfully!',
                         style: TextStyle(
                           fontSize: 24,
                           fontWeight: FontWeight.bold,
-                          color:
-                          Theme.of(context).textTheme.titleLarge?.color,
+                          color: Theme.of(context).textTheme.titleLarge?.color,
                         ),
                       ),
                       const SizedBox(height: 12),
@@ -190,7 +171,10 @@ class _ResetPasswordPageState extends State<ResetPasswordPage>
                         isArabic
                             ? 'يمكنك الآن تسجيل الدخول باستخدام كلمة المرور الجديدة'
                             : 'You can now sign in with your new password',
-                        style: TextStyle(color: Colors.grey[600], fontSize: 14),
+                        style: TextStyle(
+                          color: Colors.grey[600],
+                          fontSize: 14,
+                        ),
                       ),
                       const SizedBox(height: 24),
                       SizedBox(
@@ -247,13 +231,12 @@ class _ResetPasswordPageState extends State<ResetPasswordPage>
             return SingleChildScrollView(
               physics: const BouncingScrollPhysics(),
               child: ConstrainedBox(
-                constraints:
-                BoxConstraints(minHeight: constraints.maxHeight),
+                constraints: BoxConstraints(minHeight: constraints.maxHeight),
                 child: IntrinsicHeight(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      // ───────────── Header ─────────────
+                      /// ===== Header =====
                       FadeTransition(
                         opacity: _fadeAnimation,
                         child: Container(
@@ -271,8 +254,7 @@ class _ResetPasswordPageState extends State<ResetPasswordPage>
                             ),
                             boxShadow: [
                               BoxShadow(
-                                color:
-                                const Color(0xFF6366F1).withOpacity(0.3),
+                                color: const Color(0xFF6366F1).withOpacity(0.3),
                                 blurRadius: 20,
                                 offset: const Offset(0, 10),
                               ),
@@ -280,20 +262,18 @@ class _ResetPasswordPageState extends State<ResetPasswordPage>
                           ),
                           child: Stack(
                             children: [
+                              /// Back button
                               Positioned(
                                 top: 20,
                                 left: 20,
                                 child: MouseRegion(
                                   cursor: SystemMouseCursors.click,
                                   child: GestureDetector(
-                                    onTap: _isLoading
-                                        ? null
-                                        : () => Navigator.pop(context),
+                                    onTap: _isLoading ? null : () => Navigator.pop(context),
                                     child: Container(
                                       padding: const EdgeInsets.all(10),
                                       decoration: BoxDecoration(
-                                        color:
-                                        Colors.white.withOpacity(0.2),
+                                        color: Colors.white.withOpacity(0.2),
                                         shape: BoxShape.circle,
                                       ),
                                       child: const Icon(
@@ -305,25 +285,21 @@ class _ResetPasswordPageState extends State<ResetPasswordPage>
                                   ),
                                 ),
                               ),
+                              /// Center content
                               Center(
                                 child: Column(
-                                  mainAxisAlignment:
-                                  MainAxisAlignment.center,
+                                  mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
                                     TweenAnimationBuilder(
                                       tween: Tween<double>(begin: 0, end: 1),
-                                      duration: const Duration(
-                                          milliseconds: 600),
-                                      builder:
-                                          (context, double value, child) {
+                                      duration: const Duration(milliseconds: 600),
+                                      builder: (context, double value, child) {
                                         return Transform.scale(
                                           scale: value,
                                           child: Container(
-                                            padding:
-                                            const EdgeInsets.all(20),
+                                            padding: const EdgeInsets.all(20),
                                             decoration: BoxDecoration(
-                                              color: Colors.white
-                                                  .withOpacity(0.2),
+                                              color: Colors.white.withOpacity(0.2),
                                               shape: BoxShape.circle,
                                             ),
                                             child: const Icon(
@@ -337,9 +313,7 @@ class _ResetPasswordPageState extends State<ResetPasswordPage>
                                     ),
                                     const SizedBox(height: 24),
                                     Text(
-                                      isArabic
-                                          ? 'إنشاء كلمة مرور جديدة'
-                                          : 'Create New Password',
+                                      isArabic ? 'إنشاء كلمة مرور جديدة' : 'Create New Password',
                                       style: const TextStyle(
                                         fontSize: 32,
                                         fontWeight: FontWeight.bold,
@@ -349,16 +323,14 @@ class _ResetPasswordPageState extends State<ResetPasswordPage>
                                     ),
                                     const SizedBox(height: 8),
                                     Padding(
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 32),
+                                      padding: const EdgeInsets.symmetric(horizontal: 32),
                                       child: Text(
                                         isArabic
                                             ? 'أدخل كلمة المرور الجديدة لحسابك'
                                             : 'Enter your new password',
                                         style: TextStyle(
                                           fontSize: 16,
-                                          color: Colors.white
-                                              .withOpacity(0.9),
+                                          color: Colors.white.withOpacity(0.9),
                                         ),
                                         textAlign: TextAlign.center,
                                       ),
@@ -370,8 +342,7 @@ class _ResetPasswordPageState extends State<ResetPasswordPage>
                           ),
                         ),
                       ),
-
-                      // ───────────── Form ─────────────
+                      /// ===== Form =====
                       Expanded(
                         child: Padding(
                           padding: const EdgeInsets.all(24.0),
@@ -381,33 +352,25 @@ class _ResetPasswordPageState extends State<ResetPasswordPage>
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 const SizedBox(height: 24),
-
-                                // Error banner
+                                /// Error message with animation
                                 if (_errorMessage != null)
                                   TweenAnimationBuilder(
                                     tween: Tween<double>(begin: 0, end: 1),
-                                    duration:
-                                    const Duration(milliseconds: 300),
-                                    builder:
-                                        (context, double value, child) {
+                                    duration: const Duration(milliseconds: 300),
+                                    builder: (context, double value, child) {
                                       return Transform.translate(
-                                        offset:
-                                        Offset(0, (1 - value) * -20),
+                                        offset: Offset(0, (1 - value) * -20),
                                         child: Opacity(
                                           opacity: value,
                                           child: Container(
-                                            padding:
-                                            const EdgeInsets.all(16),
+                                            padding: const EdgeInsets.all(16),
                                             decoration: BoxDecoration(
-                                              color: isDark
-                                                  ? Colors.red.shade900
-                                                  .withOpacity(0.3)
+                                              color: isDark 
+                                                  ? Colors.red.shade900.withOpacity(0.3)
                                                   : Colors.red.shade50,
-                                              borderRadius:
-                                              BorderRadius.circular(
-                                                  16),
+                                              borderRadius: BorderRadius.circular(16),
                                               border: Border.all(
-                                                color: isDark
+                                                color: isDark 
                                                     ? Colors.red.shade700
                                                     : Colors.red.shade200,
                                               ),
@@ -415,23 +378,15 @@ class _ResetPasswordPageState extends State<ResetPasswordPage>
                                             child: Row(
                                               children: [
                                                 Icon(
-                                                  Icons.error_outline,
-                                                  color: isDark
-                                                      ? Colors
-                                                      .red.shade300
-                                                      : Colors
-                                                      .red.shade700,
+                                                  Icons.error_outline, 
+                                                  color: isDark ? Colors.red.shade300 : Colors.red.shade700,
                                                 ),
                                                 const SizedBox(width: 12),
                                                 Expanded(
                                                   child: Text(
                                                     _errorMessage!,
                                                     style: TextStyle(
-                                                      color: isDark
-                                                          ? Colors
-                                                          .red.shade300
-                                                          : Colors
-                                                          .red.shade700,
+                                                      color: isDark ? Colors.red.shade300 : Colors.red.shade700,
                                                     ),
                                                   ),
                                                 ),
@@ -442,88 +397,61 @@ class _ResetPasswordPageState extends State<ResetPasswordPage>
                                       );
                                     },
                                   ),
-                                if (_errorMessage != null)
-                                  const SizedBox(height: 20),
-
-                                // New Password Field
+                                if (_errorMessage != null) const SizedBox(height: 20),
+                                /// New Password Field
                                 _buildInputField(
                                   context,
                                   controller: _passwordController,
-                                  label: isArabic
-                                      ? 'كلمة المرور الجديدة'
-                                      : 'New Password',
-                                  hint: isArabic
-                                      ? 'أدخل كلمة المرور الجديدة'
-                                      : 'Enter new password',
+                                  label: isArabic ? 'كلمة المرور الجديدة' : 'New Password',
+                                  hint: isArabic ? 'أدخل كلمة المرور الجديدة' : 'Enter new password',
                                   icon: Icons.lock_outline_rounded,
                                   obscureText: _obscurePassword,
-                                  onToggle: () => setState(() =>
-                                  _obscurePassword =
-                                  !_obscurePassword),
+                                  onToggle: () => setState(() => _obscurePassword = !_obscurePassword),
                                 ),
                                 const SizedBox(height: 20),
-
-                                // Confirm Password Field
+                                /// Confirm Password Field
                                 _buildInputField(
                                   context,
                                   controller: _confirmPasswordController,
-                                  label: isArabic
-                                      ? 'تأكيد كلمة المرور'
-                                      : 'Confirm Password',
-                                  hint: isArabic
-                                      ? 'أعد إدخال كلمة المرور الجديدة'
-                                      : 'Re-enter new password',
+                                  label: isArabic ? 'تأكيد كلمة المرور' : 'Confirm Password',
+                                  hint: isArabic ? 'أعد إدخال كلمة المرور الجديدة' : 'Re-enter new password',
                                   icon: Icons.lock_outline_rounded,
                                   obscureText: _obscureConfirmPassword,
-                                  onToggle: () => setState(() =>
-                                  _obscureConfirmPassword =
-                                  !_obscureConfirmPassword),
+                                  onToggle: () => setState(() => _obscureConfirmPassword = !_obscureConfirmPassword),
                                 ),
                                 const SizedBox(height: 32),
-
-                                // ── Requirements box ──────────────────────
+                                /// Info box with password requirements
                                 TweenAnimationBuilder(
                                   tween: Tween<double>(begin: 0, end: 1),
-                                  duration:
-                                  const Duration(milliseconds: 600),
-                                  builder:
-                                      (context, double value, child) {
+                                  duration: const Duration(milliseconds: 600),
+                                  builder: (context, double value, child) {
                                     return Transform.translate(
                                       offset: Offset(0, (1 - value) * 30),
                                       child: Opacity(
                                         opacity: value,
                                         child: Container(
                                           width: double.infinity,
-                                          padding:
-                                          const EdgeInsets.all(16),
+                                          padding: const EdgeInsets.all(16),
                                           decoration: BoxDecoration(
                                             gradient: LinearGradient(
                                               colors: [
-                                                theme.colorScheme.primary
-                                                    .withOpacity(0.1),
-                                                theme.colorScheme.primary
-                                                    .withOpacity(0.05),
+                                                theme.colorScheme.primary.withOpacity(0.1),
+                                                theme.colorScheme.primary.withOpacity(0.05),
                                               ],
                                             ),
-                                            borderRadius:
-                                            BorderRadius.circular(16),
+                                            borderRadius: BorderRadius.circular(16),
                                             border: Border.all(
-                                              color: theme
-                                                  .colorScheme.primary
-                                                  .withOpacity(0.3),
+                                              color: theme.colorScheme.primary.withOpacity(0.3),
                                             ),
                                           ),
                                           child: Column(
-                                            crossAxisAlignment:
-                                            CrossAxisAlignment.start,
+                                            crossAxisAlignment: CrossAxisAlignment.start,
                                             children: [
                                               Row(
                                                 children: [
                                                   Icon(
-                                                    Icons
-                                                        .info_outline_rounded,
-                                                    color: theme
-                                                        .colorScheme.primary,
+                                                    Icons.info_outline_rounded,
+                                                    color: theme.colorScheme.primary,
                                                     size: 18,
                                                   ),
                                                   const SizedBox(width: 8),
@@ -533,12 +461,9 @@ class _ResetPasswordPageState extends State<ResetPasswordPage>
                                                           ? 'متطلبات كلمة المرور:'
                                                           : 'Password Requirements:',
                                                       style: TextStyle(
-                                                        color: theme
-                                                            .colorScheme
-                                                            .primary,
+                                                        color: theme.colorScheme.primary,
                                                         fontSize: 13,
-                                                        fontWeight:
-                                                        FontWeight.w600,
+                                                        fontWeight: FontWeight.w600,
                                                       ),
                                                     ),
                                                   ),
@@ -547,18 +472,15 @@ class _ResetPasswordPageState extends State<ResetPasswordPage>
                                               const SizedBox(height: 8),
                                               _buildRequirementRow(
                                                 context,
-                                                text: isArabic
-                                                    ? '8 أحرف على الأقل'
-                                                    : 'At least 8 characters',
-                                                isMet: _lengthOk,
+                                                text: isArabic ? '6 أحرف على الأقل' : 'At least 6 characters',
+                                                isMet: _passwordController.text.length >= 6,
                                               ),
                                               const SizedBox(height: 4),
                                               _buildRequirementRow(
                                                 context,
-                                                text: isArabic
-                                                    ? 'كلمة المرور وتأكيدها متطابقان'
-                                                    : 'Password and confirmation match',
-                                                isMet: _matchOk,
+                                                text: isArabic ? 'كلمة المرور وتأكيدها متطابقان' : 'Password and confirmation match',
+                                                isMet: _passwordController.text.isNotEmpty && 
+                                                       _passwordController.text == _confirmPasswordController.text,
                                               ),
                                             ],
                                           ),
@@ -568,14 +490,11 @@ class _ResetPasswordPageState extends State<ResetPasswordPage>
                                   },
                                 ),
                                 const SizedBox(height: 32),
-
-                                // ── Reset button ──────────────────────────
+                                /// Reset Button with animation
                                 TweenAnimationBuilder(
                                   tween: Tween<double>(begin: 0, end: 1),
-                                  duration:
-                                  const Duration(milliseconds: 700),
-                                  builder:
-                                      (context, double value, child) {
+                                  duration: const Duration(milliseconds: 700),
+                                  builder: (context, double value, child) {
                                     return Transform.translate(
                                       offset: Offset(0, (1 - value) * 40),
                                       child: Opacity(
@@ -584,103 +503,62 @@ class _ResetPasswordPageState extends State<ResetPasswordPage>
                                           width: double.infinity,
                                           height: 56,
                                           child: GestureDetector(
-                                            onTap: _isLoading
-                                                ? null
-                                                : _resetPassword,
+                                            onTap: _isLoading ? null : _resetPassword,
                                             child: AnimatedContainer(
-                                              duration: const Duration(
-                                                  milliseconds: 300),
+                                              duration: const Duration(milliseconds: 300),
                                               decoration: BoxDecoration(
                                                 gradient: _isLoading
                                                     ? LinearGradient(
-                                                  colors: isDark
-                                                      ? [
-                                                    Colors.grey
-                                                        .shade700,
-                                                    Colors.grey
-                                                        .shade800
-                                                  ]
-                                                      : [
-                                                    Colors.grey
-                                                        .shade400,
-                                                    Colors.grey
-                                                        .shade500
-                                                  ],
-                                                )
+                                                        colors: isDark
+                                                            ? [Colors.grey.shade700, Colors.grey.shade800]
+                                                            : [Colors.grey.shade400, Colors.grey.shade500],
+                                                      )
                                                     : const LinearGradient(
-                                                  begin: Alignment
-                                                      .topLeft,
-                                                  end: Alignment
-                                                      .bottomRight,
-                                                  colors: [
-                                                    Color(0xFF6366F1),
-                                                    Color(0xFF8B5CF6)
-                                                  ],
-                                                ),
-                                                borderRadius:
-                                                BorderRadius.circular(
-                                                    20),
+                                                        begin: Alignment.topLeft,
+                                                        end: Alignment.bottomRight,
+                                                        colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
+                                                      ),
+                                                borderRadius: BorderRadius.circular(20),
                                                 boxShadow: _isLoading
                                                     ? []
                                                     : [
-                                                  BoxShadow(
-                                                    color: const Color(
-                                                        0xFF6366F1)
-                                                        .withOpacity(
-                                                        0.4),
-                                                    blurRadius: 20,
-                                                    offset:
-                                                    const Offset(
-                                                        0, 8),
-                                                  ),
-                                                ],
+                                                        BoxShadow(
+                                                          color: const Color(0xFF6366F1).withOpacity(0.4),
+                                                          blurRadius: 20,
+                                                          offset: const Offset(0, 8),
+                                                        ),
+                                                      ],
                                               ),
                                               child: Center(
                                                 child: _isLoading
                                                     ? const SizedBox(
-                                                  width: 24,
-                                                  height: 24,
-                                                  child:
-                                                  CircularProgressIndicator(
-                                                    strokeWidth: 2.5,
-                                                    valueColor:
-                                                    AlwaysStoppedAnimation(
-                                                        Colors
-                                                            .white),
-                                                  ),
-                                                )
+                                                        width: 24,
+                                                        height: 24,
+                                                        child: CircularProgressIndicator(
+                                                          strokeWidth: 2.5,
+                                                          valueColor: AlwaysStoppedAnimation(Colors.white),
+                                                        ),
+                                                      )
                                                     : Row(
-                                                  mainAxisAlignment:
-                                                  MainAxisAlignment
-                                                      .center,
-                                                  children: [
-                                                    const Icon(
-                                                      Icons
-                                                          .save_rounded,
-                                                      color:
-                                                      Colors.white,
-                                                      size: 20,
-                                                    ),
-                                                    const SizedBox(
-                                                        width: 10),
-                                                    Text(
-                                                      isArabic
-                                                          ? 'إعادة تعيين كلمة المرور'
-                                                          : 'Reset Password',
-                                                      style:
-                                                      const TextStyle(
-                                                        fontSize: 16,
-                                                        fontWeight:
-                                                        FontWeight
-                                                            .w600,
-                                                        color: Colors
-                                                            .white,
-                                                        letterSpacing:
-                                                        -0.3,
+                                                        mainAxisAlignment: MainAxisAlignment.center,
+                                                        children: [
+                                                          const Icon(
+                                                            Icons.save_rounded,
+                                                            color: Colors.white,
+                                                            size: 20,
+                                                          ),
+                                                          const SizedBox(width: 10),
+                                                          Text(
+                                                            isArabic ? 'إعادة تعيين كلمة المرور' : 'Reset Password',
+                                                            style: const TextStyle(
+                                                              fontSize: 16,
+                                                              fontWeight: FontWeight.w600,
+                                                              color: Colors.white,
+                                                              letterSpacing: -0.3,
+                                                            ),
+                                                          ),
+                                                        ],
                                                       ),
-                                                    ),
-                                                  ],
-                                                ),
                                               ),
                                             ),
                                           ),
@@ -690,34 +568,23 @@ class _ResetPasswordPageState extends State<ResetPasswordPage>
                                   },
                                 ),
                                 const SizedBox(height: 24),
-
-                                // Back to sign in
+                                /// Back to sign in link
                                 Row(
-                                  mainAxisAlignment:
-                                  MainAxisAlignment.center,
+                                  mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
                                     Text(
-                                      isArabic
-                                          ? 'تذكرت كلمة المرور؟'
-                                          : 'Remember your password?',
+                                      isArabic ? 'تذكرت كلمة المرور؟' : 'Remember your password?',
                                       style: TextStyle(
-                                        color: theme.textTheme.bodyMedium
-                                            ?.color
-                                            ?.withOpacity(0.7),
+                                        color: theme.textTheme.bodyMedium?.color?.withOpacity(0.7),
                                       ),
                                     ),
                                     TextButton(
-                                      onPressed: _isLoading
-                                          ? null
-                                          : () => Navigator.pop(context),
+                                      onPressed: _isLoading ? null : () => Navigator.pop(context),
                                       style: TextButton.styleFrom(
-                                        foregroundColor:
-                                        const Color(0xFF6366F1),
+                                        foregroundColor: const Color(0xFF6366F1),
                                       ),
                                       child: Text(
-                                        isArabic
-                                            ? 'تسجيل الدخول'
-                                            : 'Sign In',
+                                        isArabic ? 'تسجيل الدخول' : 'Sign In',
                                         style: const TextStyle(
                                           fontWeight: FontWeight.bold,
                                         ),
@@ -743,26 +610,24 @@ class _ResetPasswordPageState extends State<ResetPasswordPage>
   }
 
   Widget _buildInputField(
-      BuildContext context, {
-        required TextEditingController controller,
-        required String label,
-        required String hint,
-        required IconData icon,
-        required bool obscureText,
-        required VoidCallback onToggle,
-      }) {
+    BuildContext context, {
+    required TextEditingController controller,
+    required String label,
+    required String hint,
+    required IconData icon,
+    required bool obscureText,
+    required VoidCallback onToggle,
+  }) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-
+    
     return Container(
       decoration: BoxDecoration(
         color: theme.cardColor,
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: isDark
-                ? Colors.black.withOpacity(0.5)
-                : Colors.black.withOpacity(0.05),
+            color: isDark ? Colors.black.withOpacity(0.5) : Colors.black.withOpacity(0.05),
             blurRadius: 15,
             offset: const Offset(0, 5),
           ),
@@ -783,14 +648,12 @@ class _ResetPasswordPageState extends State<ResetPasswordPage>
             color: theme.textTheme.bodyMedium?.color?.withOpacity(0.7),
           ),
           prefixIcon: Icon(
-            icon,
+            icon, 
             color: theme.textTheme.bodyMedium?.color?.withOpacity(0.7),
           ),
           suffixIcon: IconButton(
             icon: Icon(
-              obscureText
-                  ? Icons.visibility_off_rounded
-                  : Icons.visibility_rounded,
+              obscureText ? Icons.visibility_off_rounded : Icons.visibility_rounded,
               color: theme.textTheme.bodyMedium?.color?.withOpacity(0.7),
             ),
             onPressed: onToggle,
@@ -804,46 +667,29 @@ class _ResetPasswordPageState extends State<ResetPasswordPage>
     );
   }
 
-  /// Requirement row:
-  /// • typing  → green if met, grey if not
-  /// • after submit → green if met, RED if not
-  Widget _buildRequirementRow(
-      BuildContext context, {
-        required String text,
-        required bool isMet,
-      }) {
-    final bool showError = _submitted && !isMet;
-
-    final Color color = isMet
-        ? const Color(0xFF10B981)       // green  – requirement met
-        : showError
-        ? Colors.red                // red    – submitted & not met
-        : Colors.grey;              // grey   – not yet typed enough
-
-    final IconData icon = isMet
-        ? Icons.check_circle_rounded
-        : showError
-        ? Icons.cancel_rounded
-        : Icons.radio_button_unchecked_rounded;
-
-    return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 250),
-      child: Row(
-        key: ValueKey('$text-$isMet-$showError'),
-        children: [
-          Icon(icon, size: 16, color: color),
-          const SizedBox(width: 8),
-          Text(
-            text,
-            style: TextStyle(
-              fontSize: 12,
-              color: color,
-              decoration: isMet ? TextDecoration.lineThrough : null,
-              decorationColor: const Color(0xFF10B981),
-            ),
+  Widget _buildRequirementRow(BuildContext context, {
+    required String text,
+    required bool isMet,
+  }) {
+    return Row(
+      children: [
+        Icon(
+          isMet ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
+          size: 16,
+          color: isMet ? const Color(0xFF10B981) : Colors.grey,
+        ),
+        const SizedBox(width: 8),
+        Text(
+          text,
+          style: TextStyle(
+            fontSize: 12,
+            color: isMet ? const Color(0xFF10B981) : Colors.grey,
+            decoration: isMet ? TextDecoration.lineThrough : null,
+            decorationColor: const Color(0xFF10B981),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
+
