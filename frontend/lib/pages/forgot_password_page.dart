@@ -1,5 +1,7 @@
 import 'page_transition.dart';
 import 'package:flutter/material.dart';
+import '../utils/responsive.dart';
+
 import '../services/auth_service.dart';
 import 'reset_password_otp_page.dart';  
 

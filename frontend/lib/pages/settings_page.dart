@@ -1,5 +1,8 @@
 import 'page_transition.dart';
 import 'package:flutter/material.dart';
+
+import 'package:flutter/services.dart';
+import '../utils/responsive.dart';
 import 'sign_in_page.dart';
 import '../main.dart';
 import '../l10n/app_localizations.dart';
@@ -303,9 +306,12 @@ class _SettingsPageState extends State<SettingsPage> {
           elevation: 0,
           backgroundColor: theme.cardColor,
         ),
-        body: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
+        body: Center(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: Responsive.maxWidth(context)),
+            child: ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
             // ── Appearance ──
             _sectionHeader(isArabic ? 'المظهر' : 'Appearance', Icons.palette_rounded, const [Color(0xFF6366F1), Color(0xFF8B5CF6)]),
             const SizedBox(height: 8),
@@ -386,6 +392,8 @@ class _SettingsPageState extends State<SettingsPage> {
             const SizedBox(height: 24),
           ],
         ),
+        ),
+      ),
       ),
     );
   }

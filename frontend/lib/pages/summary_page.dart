@@ -1,6 +1,9 @@
 // pages/summary_page.dart
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+
+import '../utils/responsive.dart';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:project_flutter/services/api_service.dart';
@@ -130,7 +133,7 @@ class _SummaryPageState extends State<SummaryPage>
     }
   }
 
-  // ── Export sheet ──────────────────────────────────────────
+    // ── Export sheet ──────────────────────────────────────────
   void _showExportSheet() {
     final theme = Theme.of(context);
     showModalBottomSheet(
@@ -362,7 +365,15 @@ class _SummaryPageState extends State<SummaryPage>
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return Scaffold(
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.escape): () {
+          if (Navigator.canPop(context)) Navigator.pop(context);
+        },
+      },
+      child: Focus(
+        autofocus: true,
+        child: Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
         title: Text(
@@ -382,7 +393,10 @@ class _SummaryPageState extends State<SummaryPage>
             ),
         ],
       ),
-      body: SingleChildScrollView(
+      body: Center(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: Responsive.maxWidth(context)),
+          child: SingleChildScrollView(
         physics: const BouncingScrollPhysics(),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -759,7 +773,11 @@ class _SummaryPageState extends State<SummaryPage>
           ],
         ),
       ),
-    );
+    ),
+  ),
+),
+),
+  );
   }
 }
 

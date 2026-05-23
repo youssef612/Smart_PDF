@@ -1,5 +1,9 @@
 // lib/pages/history_page.dart
 import 'package:flutter/material.dart';
+
+import 'package:flutter/services.dart';
+import '../utils/responsive.dart';
+
 import '../services/history_store.dart';
 import 'questions_page.dart';
 import 'summary_page.dart';
@@ -58,7 +62,7 @@ class _HistoryPageState extends State<HistoryPage> {
       _isLoading = false;
     });
   }
-  void _applyFilter() {
+void _applyFilter() {
     final q = _search.toLowerCase();
     setState(() {
       _filtered = _history.where((item) {
@@ -67,12 +71,12 @@ class _HistoryPageState extends State<HistoryPage> {
         final fileName = item['file_name']?.toString().toLowerCase() ?? '';
 
         // 2. دلوقتي نقدر نستخدمهم في الـ matchSearch بدون أخطاء
-        final matchSearch = q.isEmpty ||
-            type.contains(q) ||
-            fileName.contains(q);
-
+        final matchSearch = q.isEmpty || 
+                            type.contains(q) || 
+                            fileName.contains(q);
+                            
         final matchType = _selectedType == 'all' || item['type'] == _selectedType;
-
+        
         return matchSearch && matchType;
       }).toList();
     });
@@ -86,7 +90,7 @@ class _HistoryPageState extends State<HistoryPage> {
     } else {
       // fallback للعناصر القديمة اللي معندهاش id
       final globalIndex = _history.indexWhere((e) =>
-      e['date'] == item['date'] && e['type'] == item['type']);
+          e['date'] == item['date'] && e['type'] == item['type']);
       if (globalIndex != -1) {
         await HistoryStore.delete(globalIndex);
       }
@@ -106,27 +110,16 @@ class _HistoryPageState extends State<HistoryPage> {
       if (rawData is List) {
         questions = rawData
             .map((q) => Map<String, String>.from(
-            (q as Map).map((k, v) => MapEntry(k.toString(), v.toString()))))
+                (q as Map).map((k, v) => MapEntry(k.toString(), v.toString()))))
             .toList();
       }
       Navigator.push(
         context,
         MaterialPageRoute(
           builder: (_) => QuestionsPage(
-            fileName:     itemFileName,
-            fileId:       itemFileId,
-            questions:    questions,
-            pageCount:    int.tryParse(                      // ✅ بدل 0
-                            item['page_count']?.toString() ?? '0'
-                          ) ?? 0,
-            questionType: item['question_type']?.toString(),
-            difficulty:   item['difficulty']?.toString(),
-            fromPage:     item['from_page'] != null         // ✅ أضف
-                ? int.tryParse(item['from_page'].toString())
-                : null,
-            toPage:       item['to_page'] != null           // ✅ أضف
-                ? int.tryParse(item['to_page'].toString())
-                : null,
+            fileName: itemFileName,
+            fileId: itemFileId,
+            questions: questions,
           ),
         ),
       );
@@ -245,7 +238,7 @@ class _HistoryPageState extends State<HistoryPage> {
           style: TextStyle(
             color: isSelected ? color : Colors.grey[600],
             fontWeight:
-            isSelected ? FontWeight.w600 : FontWeight.normal,
+                isSelected ? FontWeight.w600 : FontWeight.normal,
             fontSize: 13,
           ),
         ),
@@ -525,8 +518,11 @@ class _HistoryPageState extends State<HistoryPage> {
               ),
           ],
         ),
-        body: Column(
-          children: [
+        body: Center(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: Responsive.maxWidth(context)),
+            child: Column(
+              children: [
             // Search
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
@@ -600,35 +596,37 @@ class _HistoryPageState extends State<HistoryPage> {
               child: _isLoading
                   ? const Center(child: CircularProgressIndicator())
                   : _filtered.isEmpty
-                  ? Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.history_rounded,
-                        size: 64, color: Colors.grey[300]),
-                    const SizedBox(height: 16),
-                    Text(
-                      isArabic ? 'لا يوجد سجل بعد' : 'No history yet',
-                      style: TextStyle(
-                        color: Colors.grey[400],
-                        fontSize: 16,
-                      ),
-                    ),
-                  ],
-                ),
-              )
-                  : RefreshIndicator(
-                onRefresh: _load,
-                child: ListView.builder(
-                  padding: const EdgeInsets.only(bottom: 24, top: 4),
-                  physics: const BouncingScrollPhysics(),
-                  itemCount: _filtered.length,
-                  itemBuilder: (ctx, i) =>
-                      _buildHistoryCard(_filtered[i]),
-                ),
-              ),
+                      ? Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.history_rounded,
+                                  size: 64, color: Colors.grey[300]),
+                              const SizedBox(height: 16),
+                              Text(
+                                isArabic ? 'لا يوجد سجل بعد' : 'No history yet',
+                                style: TextStyle(
+                                  color: Colors.grey[400],
+                                  fontSize: 16,
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                      : RefreshIndicator(
+                          onRefresh: _load,
+                          child: ListView.builder(
+                            padding: const EdgeInsets.only(bottom: 24, top: 4),
+                            physics: const BouncingScrollPhysics(),
+                            itemCount: _filtered.length,
+                            itemBuilder: (ctx, i) =>
+                                _buildHistoryCard(_filtered[i]),
+                          ),
+                        ),
             ),
           ],
+            ),
+          ),
         ),
       ),
     );
