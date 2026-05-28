@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'dart:convert';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'widgets/interactive_scale.dart';
 
 import 'package:flutter/services.dart';
 import '../utils/responsive.dart';
@@ -20,6 +21,10 @@ import 'personal_page.dart';
 import 'settings_page.dart';
 import 'sign_in_page.dart';
 import 'history_page.dart';
+import 'widgets/particles_painter.dart';
+import 'chat_page.dart';
+import 'chat_page.dart';
+import 'chat_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({Key? key}) : super(key: key);
@@ -111,6 +116,30 @@ class _HomePageState extends State<HomePage>
         route: '/explanation',
         gradient: const LinearGradient(
           colors: [Color(0xFF10B981), Color(0xFF34D399)],
+        ),
+      ),
+      Feature(
+        title: isArabic ? 'شات ذكي' : 'Smart Chat',
+        description: isArabic
+            ? 'اسأل أي سؤال عن المستند'
+            : 'Ask anything about the document',
+        icon: Icons.chat_rounded,
+        color: const Color(0xFF3B82F6),
+        route: '/chat',
+        gradient: const LinearGradient(
+          colors: [Color(0xFF3B82F6), Color(0xFF60A5FA)],
+        ),
+      ),
+      Feature(
+        title: isArabic ? 'شات ذكي' : 'Smart Chat',
+        description: isArabic
+            ? 'اسأل أي سؤال عن أي حاجة'
+            : 'Ask anything, anytime',
+        icon: Icons.chat_rounded,
+        color: const Color(0xFF3B82F6),
+        route: '/chat',
+        gradient: const LinearGradient(
+          colors: [Color(0xFF3B82F6), Color(0xFF60A5FA)],
         ),
       ),
       Feature(
@@ -545,6 +574,12 @@ class _HomePageState extends State<HomePage>
           if (_selectedFileName == null) { _showErrorSnackBar(isArabic ? 'الرجاء رفع ملف PDF أولاً' : 'Please upload a PDF first'); return; }
           Navigator.push(context, PageTransition(child: ExplanationPage(fileName: _selectedFileName, fileId: _selectedFileId), type: PageTransitionType.slideFromRight));
         },
+        const SingleActivator(LogicalKeyboardKey.keyC, control: true): () {
+          if (_selectedFileId == null) { _showErrorSnackBar(isArabic ? 'الرجاء رفع ملف PDF أولاً' : 'Please upload a PDF first'); return; }
+        },
+        const SingleActivator(LogicalKeyboardKey.keyP, control: true): () {
+          Navigator.push(context, PageTransition(child: const PersonalPage(), type: PageTransitionType.slideFromRight));
+        },
       },
       child: Focus(
         focusNode: _focusNode,
@@ -670,7 +705,7 @@ class _HomePageState extends State<HomePage>
             _user?['name'] ?? (isArabic ? 'مستخدم' : 'User'),
             style: theme.textTheme.headlineSmall?.copyWith(
               fontWeight: FontWeight.bold,
-              fontSize: 32,
+              fontSize: Responsive.fontSize(context, 32),
               letterSpacing: -1,
             ),
           ),
@@ -756,7 +791,7 @@ class _HomePageState extends State<HomePage>
       },
       child: MouseRegion(
         cursor: SystemMouseCursors.click,
-        child: GestureDetector(
+        child: InteractiveScale(
           onTap: _pickPDF,
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 200),
@@ -806,6 +841,14 @@ class _HomePageState extends State<HomePage>
                   decoration: BoxDecoration(
                     color: Colors.white.withOpacity(0.05),
                     shape: BoxShape.circle,
+                  ),
+                ),
+              ),
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(32),
+                    child: const ParticlesLayer(count: 18),
                   ),
                 ),
               ),
@@ -1031,6 +1074,18 @@ class _HomePageState extends State<HomePage>
       margin: const EdgeInsets.only(bottom: 16),
       child: GestureDetector(
         onTap: () {
+          if (feature.route == '/chat') {
+            Navigator.push(
+              context,
+              PageTransition(
+                child: const ChatPage(),
+                type: PageTransitionType.slideFromRight,
+                duration: const Duration(milliseconds: 400),
+              ),
+            );
+            return;
+          }
+
           if (_selectedFileName == null) {
             _showErrorSnackBar(isArabic
                 ? 'الرجاء رفع ملف PDF أولاً'
@@ -1048,6 +1103,9 @@ class _HomePageState extends State<HomePage>
           } else if (feature.route == '/mindmap') {
             page = MindMapPage(
                 fileName: _selectedFileName, fileId: _selectedFileId);
+          } else if (feature.route == '/chat') {
+            page = ChatPage(
+                fileName: _selectedFileName!, fileId: _selectedFileId!);
           } else {
             page = QuestionsPage(
                 fileName: _selectedFileName, fileId: _selectedFileId);
@@ -1245,7 +1303,7 @@ class AppDrawer extends StatelessWidget {
                           _getInitials(user?['name']),
                           style: TextStyle(
                             color: _getColorFromName(user?['name']),
-                            fontSize: 32,
+                            fontSize: Responsive.fontSize(context, 32),
                             fontWeight: FontWeight.bold,
                           ),
                         )
@@ -1300,6 +1358,21 @@ class AppDrawer extends StatelessWidget {
 
 
 
+                _buildDrawerItem(
+                  context,
+                  Icons.chat_rounded,
+                  isArabic ? 'الشات الذكي' : 'Smart Chat',
+                      () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      PageTransition(
+                        child: const ChatPage(),
+                        type: PageTransitionType.slideFromRight,
+                      ),
+                    );
+                  },
+                ),
                 _buildDrawerItem(
                   context,
                   Icons.settings_rounded,

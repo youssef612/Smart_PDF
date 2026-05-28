@@ -1,7 +1,6 @@
 import 'page_transition.dart';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import 'widgets/interactive_scale.dart';
 
 import '../utils/responsive.dart';
 
@@ -542,11 +541,11 @@ class _SignUpPageState extends State<SignUpPage>
                                       const SizedBox(height: 28),
 
                                       /// Sign Up Button
-                                      InteractiveScale(
-                                        onTap: _isLoading ? null : _signUp,
-                                        child: SizedBox(
-                                          width: double.infinity,
-                                          height: 56,
+                                      SizedBox(
+                                        width: double.infinity,
+                                        height: 56,
+                                        child: GestureDetector(
+                                          onTap: _isLoading ? null : _signUp,
                                           child: AnimatedContainer(
                                             duration: const Duration(milliseconds: 300),
                                             decoration: BoxDecoration(

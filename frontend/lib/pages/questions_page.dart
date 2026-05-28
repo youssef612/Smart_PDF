@@ -1,5 +1,8 @@
 // lib/pages/questions_page.dart
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'chat_page.dart';
+import 'widgets/interactive_scale.dart';
 
 import 'package:flutter/services.dart';
 import '../utils/responsive.dart';
@@ -837,7 +840,15 @@ class _QuestionsPageState extends State<QuestionsPage>
 
     return Directionality(
       textDirection: isArabic ? TextDirection.rtl : TextDirection.ltr,
-      child: Scaffold(
+      child: CallbackShortcuts(
+        bindings: {
+          const SingleActivator(LogicalKeyboardKey.escape): () {
+            if (Navigator.canPop(context)) Navigator.pop(context);
+          },
+        },
+        child: Focus(
+          autofocus: true,
+          child: Scaffold(
         backgroundColor: theme.scaffoldBackgroundColor,
         appBar: AppBar(
           title: Text(
@@ -847,6 +858,15 @@ class _QuestionsPageState extends State<QuestionsPage>
           elevation: 0,
           backgroundColor: theme.cardColor,
           actions: [
+            if (widget.fileId != null)
+              IconButton(
+                onPressed: () => Navigator.push(context, MaterialPageRoute(
+                  builder: (_) => ChatPage(fileId: widget.fileId!, fileName: widget.fileName ?? ""),
+                )),
+                icon: const Icon(Icons.lightbulb_rounded),
+                color: const Color(0xFFFBBF24),
+                tooltip: isArabic ? 'الشات الذكي' : 'Smart Chat',
+              ),
             if (_generatedQuestions.isNotEmpty)
               IconButton(
                 onPressed: _showExportSheet,
@@ -1214,12 +1234,10 @@ class _QuestionsPageState extends State<QuestionsPage>
                       const SizedBox(height: 32),
 
                       // Generate Button
-                      SizedBox(
-                        width: double.infinity,
-                        child: GestureDetector(
-                          onTap: _isGenerating
-                              ? null
-                              : _generateQuestions,
+                      InteractiveScale(
+                        onTap: _isGenerating ? null : _generateQuestions,
+                        child: SizedBox(
+                          width: double.infinity,
                           child: AnimatedContainer(
                             duration:
                             const Duration(milliseconds: 300),
@@ -1484,6 +1502,8 @@ class _QuestionsPageState extends State<QuestionsPage>
           ),
         ),
       ),
+          ),
+        ),
           ),
         ),
     );

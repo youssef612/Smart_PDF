@@ -159,6 +159,7 @@ class _ExamPageState extends State<ExamPage> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
+   constraints: const BoxConstraints(maxWidth: 480),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text(isArabic ? 'مسح الامتحان؟' : 'Clear Exam?'),
         content: Text(isArabic

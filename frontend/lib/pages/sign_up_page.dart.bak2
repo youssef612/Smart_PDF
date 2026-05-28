@@ -1,7 +1,6 @@
 import 'page_transition.dart';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import 'widgets/interactive_scale.dart';
 
 import '../utils/responsive.dart';
 
@@ -9,6 +8,7 @@ import 'package:image_picker/image_picker.dart';
 import '../services/auth_service.dart';
 import '../l10n/app_localizations.dart';
 import 'Otp_Verification_Page.dart';  // ✅ أضف هذا الـ import
+import 'widgets/particles_painter.dart';
 
 class SignUpPage extends StatefulWidget {
   const SignUpPage({Key? key}) : super(key: key);
@@ -212,7 +212,9 @@ class _SignUpPageState extends State<SignUpPage>
                         /// ===== Header =====
                         FadeTransition(
                           opacity: _fadeAnimation,
-                          child: Container(
+                          child: Stack(
+                            children: [
+                              Container(
                             width: double.infinity,
                             decoration: BoxDecoration(
                               gradient: const LinearGradient(
@@ -542,11 +544,11 @@ class _SignUpPageState extends State<SignUpPage>
                                       const SizedBox(height: 28),
 
                                       /// Sign Up Button
-                                      InteractiveScale(
-                                        onTap: _isLoading ? null : _signUp,
-                                        child: SizedBox(
-                                          width: double.infinity,
-                                          height: 56,
+                                      SizedBox(
+                                        width: double.infinity,
+                                        height: 56,
+                                        child: GestureDetector(
+                                          onTap: _isLoading ? null : _signUp,
                                           child: AnimatedContainer(
                                             duration: const Duration(milliseconds: 300),
                                             decoration: BoxDecoration(

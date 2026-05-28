@@ -1,11 +1,14 @@
 import 'page_transition.dart';
+import 'package:desktop_drop/desktop_drop.dart';
 import 'dart:typed_data';
 import 'dart:convert';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+
 import 'package:flutter/services.dart';
 import '../utils/responsive.dart';
 
+import 'package:project_flutter/services/api_service.dart';
 import 'package:project_flutter/services/auth_service.dart';
 import 'package:project_flutter/services/files_service.dart';
 import 'explanation_page.dart';
@@ -35,6 +38,7 @@ class _HomePageState extends State<HomePage>
   String? _selectedFileName;
   String? _selectedFileId;
   bool _isFileProcessing = false;
+  bool _isDragging = false;
 
   late String _selectedLanguage;
 
@@ -144,10 +148,31 @@ class _HomePageState extends State<HomePage>
     return null;
   }
 
+
+
+  Future<void> _refreshUserData() async {
+    try {
+      final response = await _authService.getCurrentUser();
+      if (response['success'] == true && mounted) {
+        final freshUser = await _authService.getCurrentUserFromStorage();
+        if (freshUser != null && mounted) {
+          setState(() {
+            _user = freshUser;
+          });
+          debugPrint('HomePage - User data refreshed:');
+          debugPrint("  - Name: ${_user?['name']}");
+          debugPrint("  - Has avatar: ${_user?['avatarBytes'] != null}");
+        }
+      }
+    } catch (e) {
+      debugPrint('Error refreshing user: \$e');
+    }
+  }
+
+
   Future<void> _loadUserData() async {
     setState(() => _isLoading = true);
 
-    // ✅ استخدم getCurrentUserFromStorage دايمًا لأنها بترجع الصورة الصح
     final localUser = await _authService.getCurrentUserFromStorage();
 
     if (localUser != null) {
@@ -155,8 +180,6 @@ class _HomePageState extends State<HomePage>
         _user = localUser;
         _isLoading = false;
       });
-
-      // refresh في الخلفية بدون ما يمسح الصورة
       _refreshUserData();
     } else {
       if (mounted) {
@@ -166,28 +189,6 @@ class _HomePageState extends State<HomePage>
               child: const SignInPage(), type: PageTransitionType.fade),
         );
       }
-    }
-  }
-
-  Future<void> _refreshUserData() async {
-    try {
-      final response = await _authService.getCurrentUser();
-      if (response['success'] == true && mounted) {
-        // ✅ بعد ما السيرفر يرد، اقرأ البيانات من التخزين المحلي
-        // لأن getCurrentUser() بتحفظ البيانات مع الصورة المحلية
-        final freshUser = await _authService.getCurrentUserFromStorage();
-        if (freshUser != null && mounted) {
-          setState(() {
-            _user = freshUser;
-          });
-          debugPrint('HomePage - User data refreshed:');
-          debugPrint('  - Name: ${_user?['name']}');
-          debugPrint('  - Has avatar: ${_user?['avatarBytes'] != null}');
-        }
-      }
-    } catch (e) {
-      debugPrint('Error refreshing user: $e');
-      // ❌ لا تمسح البيانات المحلية لو فيه error
     }
   }
 
@@ -669,7 +670,7 @@ class _HomePageState extends State<HomePage>
             _user?['name'] ?? (isArabic ? 'مستخدم' : 'User'),
             style: theme.textTheme.headlineSmall?.copyWith(
               fontWeight: FontWeight.bold,
-              fontSize: 32,
+              fontSize: Responsive.fontSize(context, 32),
               letterSpacing: -1,
             ),
           ),
@@ -728,15 +729,47 @@ class _HomePageState extends State<HomePage>
   }
 
   Widget _buildUploadButton(ThemeData theme) {
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      child: GestureDetector(
-        onTap: _pickPDF,
-        child: Container(
-          width: double.infinity,
-          height: 220,
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
+    return DropTarget(
+      onDragEntered: (_) => setState(() => _isDragging = true),
+      onDragExited: (_) => setState(() => _isDragging = false),
+      onDragDone: (details) async {
+        setState(() => _isDragging = false);
+        final files = details.files.where((f) => f.path.toLowerCase().endsWith('.pdf')).toList();
+        if (files.isEmpty) {
+          _showErrorSnackBar(isArabic ? 'يرجى إسقاط ملف PDF فقط' : 'Please drop a PDF file only');
+          return;
+        }
+        final file = files.first;
+        final bytes = await file.readAsBytes();
+        final fileName = file.name;
+        final uploadedFile = await _filesService.uploadFileBytes(bytes, fileName: fileName, type: 'PDF');
+        if (uploadedFile != null) {
+          setState(() {
+            _selectedFileName = fileName;
+            _selectedFileId = uploadedFile['id']?.toString();
+            _isFileProcessing = uploadedFile['has_text'] == false;
+          });
+          if (mounted) _showSuccessSnackBar('$fileName ${isArabic ? 'تم رفعه بنجاح' : 'uploaded successfully'}');
+        } else {
+          if (mounted) _showErrorSnackBar(isArabic ? 'فشل رفع الملف' : 'Failed to upload file');
+        }
+      },
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          onTap: _pickPDF,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            width: double.infinity,
+            height: 220,
+            decoration: BoxDecoration(
+              gradient: _isDragging
+                  ? const LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [Color(0xFF4F46E5), Color(0xFF7C3AED)],
+                    )
+                  : const LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
@@ -824,6 +857,7 @@ class _HomePageState extends State<HomePage>
                 ),
               ),
             ],
+          ),
           ),
         ),
       ),
@@ -1211,7 +1245,7 @@ class AppDrawer extends StatelessWidget {
                           _getInitials(user?['name']),
                           style: TextStyle(
                             color: _getColorFromName(user?['name']),
-                            fontSize: 32,
+                            fontSize: Responsive.fontSize(context, 32),
                             fontWeight: FontWeight.bold,
                           ),
                         )

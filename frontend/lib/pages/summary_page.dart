@@ -1,6 +1,8 @@
 // pages/summary_page.dart
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'chat_page.dart';
+import 'widgets/interactive_scale.dart';
 
 import '../utils/responsive.dart';
 
@@ -9,8 +11,10 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:project_flutter/services/api_service.dart';
 import 'package:project_flutter/services/history_store.dart';
 import 'package:project_flutter/pages/widgets/math_markdown.dart';
+import 'widgets/particles_painter.dart';
 import 'widgets/pdf_export.dart';
 import 'widgets/word_export.dart';
+import 'widgets/particles_painter.dart';
 
 
 // ─────────────────────────────────────────────────────────────
@@ -384,6 +388,22 @@ class _SummaryPageState extends State<SummaryPage>
         backgroundColor: theme.cardColor,
         // ── Export icon في AppBar (يظهر بس لو في ملخص) ──
         actions: [
+          if (widget.fileId != null)
+            IconButton(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => ChatPage(
+                      fileName: widget.fileName ?? '',
+                    ),
+                  ),
+                );
+              },
+              icon: const Icon(Icons.lightbulb_rounded),
+              color: const Color(0xFFFBBF24),
+              tooltip: isArabic ? 'الشات الذكي' : 'Smart Chat',
+            ),
           if (_summaryResult != null)
             IconButton(
               onPressed: _showExportSheet,
@@ -435,11 +455,12 @@ class _SummaryPageState extends State<SummaryPage>
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
-                                isArabic ? 'ملخص ذكي' : 'Smart Summary',
-                                style: theme.textTheme.headlineMedium?.copyWith(
+                              ShimmerText(
+                                text: isArabic ? 'ملخص ذكي' : 'Smart Summary',
+                                style: (theme.textTheme.headlineMedium ?? const TextStyle()).copyWith(
                                   fontWeight: FontWeight.bold,
                                   letterSpacing: -0.5,
+                                  color: const Color(0xFF6366F1),
                                 ),
                               ),
                               const SizedBox(height: 4),
@@ -515,10 +536,10 @@ class _SummaryPageState extends State<SummaryPage>
                 margin:
                 const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 padding: const EdgeInsets.all(20),
-                child: SizedBox(
-                  width: double.infinity,
-                  child: GestureDetector(
-                    onTap: _isGenerating ? null : _generateSummary,
+                child: InteractiveScale(
+                  onTap: _isGenerating ? null : _generateSummary,
+                  child: SizedBox(
+                    width: double.infinity,
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 300),
                       padding: const EdgeInsets.symmetric(vertical: 16),
@@ -772,12 +793,12 @@ class _SummaryPageState extends State<SummaryPage>
             const SizedBox(height: 16),
           ],
         ),
+          ),
+        ),
       ),
-    ),
-  ),
-),
-),
-  );
+        ),
+      ),
+    );
   }
 }
 

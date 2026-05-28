@@ -75,6 +75,7 @@ class _MyAppState extends State<MyApp> {
       theme: ThemeData(
         useMaterial3: true,
         brightness: Brightness.light,
+        splashFactory: InkRipple.splashFactory,
         primaryColor: const Color(0xFF64B5F6),
         scaffoldBackgroundColor: Colors.white,
         fontFamily: 'Inter',
@@ -98,6 +99,7 @@ class _MyAppState extends State<MyApp> {
       darkTheme: ThemeData(
         useMaterial3: true,
         brightness: Brightness.dark,
+        splashFactory: InkRipple.splashFactory,
         primaryColor: const Color(0xFF64B5F6),
         scaffoldBackgroundColor: const Color(0xFF121212),
         fontFamily: 'Inter',

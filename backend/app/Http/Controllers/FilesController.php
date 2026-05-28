@@ -14,8 +14,8 @@ use Illuminate\Validation\Rule;
 
 class FilesController extends Controller
 {
-    const MARKER_URL    = 'https://ponchoed-cloddishly-tamekia.ngrok-free.dev';
-    const MODEL_URL     = 'https://botany-symphonic-essential.ngrok-free.dev';
+    const MARKER_URL    = 'https://climatological-yamileth-parliamentarily.ngrok-free.dev';
+    const MODEL_URL     = 'https://pavid-jacinto-imperatorially.ngrok-free.dev';
     const NGROK_HEADERS = [
         'ngrok-skip-browser-warning' => 'true',
         'Accept'                     => 'application/json',

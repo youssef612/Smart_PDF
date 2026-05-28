@@ -1,11 +1,13 @@
 import 'page_transition.dart';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'widgets/interactive_scale.dart';
 import '../utils/responsive.dart';
 
 import 'package:project_flutter/services/auth_service.dart';
 import 'reset_password_page.dart';
 import 'sign_in_page.dart';
+import 'widgets/particles_painter.dart';
 
 class ResetPasswordOtpPage extends StatefulWidget {
   final String email;
@@ -286,6 +288,11 @@ class _ResetPasswordOtpPageState extends State<ResetPasswordOtpPage>
                                   child: Column(
                                     mainAxisAlignment: MainAxisAlignment.center,
                                     children: [
+                              Positioned.fill(
+                                child: IgnorePointer(
+                                  child: ParticlesLayer(count: 14),
+                                ),
+                              ),
                                       TweenAnimationBuilder(
                                         tween: Tween<double>(begin: 0, end: 1),
                                         duration: const Duration(milliseconds: 600),
@@ -475,11 +482,11 @@ class _ResetPasswordOtpPageState extends State<ResetPasswordOtpPage>
                                       offset: Offset(0, (1 - value) * 40),
                                       child: Opacity(
                                         opacity: value,
-                                        child: SizedBox(
-                                          width: double.infinity,
-                                          height: 56,
-                                          child: GestureDetector(
-                                            onTap: _isLoading ? null : _verifyOtp,
+                                        child: InteractiveScale(
+                                          onTap: _isLoading ? null : _verifyOtp,
+                                          child: SizedBox(
+                                            width: double.infinity,
+                                            height: 56,
                                             child: AnimatedContainer(
                                               duration: const Duration(milliseconds: 300),
                                               decoration: BoxDecoration(

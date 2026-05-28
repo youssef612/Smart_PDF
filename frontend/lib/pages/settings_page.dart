@@ -1,5 +1,6 @@
 import 'page_transition.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'package:flutter/services.dart';
 import '../utils/responsive.dart';
@@ -299,7 +300,15 @@ class _SettingsPageState extends State<SettingsPage> {
 
     return Directionality(
       textDirection: isArabic ? TextDirection.rtl : TextDirection.ltr,
-      child: Scaffold(
+      child: CallbackShortcuts(
+        bindings: {
+          const SingleActivator(LogicalKeyboardKey.escape): () {
+            if (Navigator.canPop(context)) Navigator.pop(context);
+          },
+        },
+        child: Focus(
+          autofocus: true,
+          child: Scaffold(
         backgroundColor: theme.scaffoldBackgroundColor,
         appBar: AppBar(
           title: Text(localizations.settings, style: const TextStyle(fontWeight: FontWeight.w600)),
@@ -394,6 +403,8 @@ class _SettingsPageState extends State<SettingsPage> {
         ),
         ),
       ),
+      ),
+        ),
       ),
     );
   }

@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'widgets/interactive_scale.dart';
 
 import 'package:flutter/services.dart';
 import '../utils/responsive.dart';
@@ -393,7 +394,7 @@ class _EditProfilePageState extends State<EditProfilePage>
                                   ),
                                 ),
                                 // Edit Button
-                                GestureDetector(
+                                InteractiveScale(
                                   onTap: _pickImage,
                                   child: Container(
                                     padding: const EdgeInsets.all(12),

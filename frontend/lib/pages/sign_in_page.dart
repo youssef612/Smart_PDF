@@ -1,9 +1,12 @@
 import 'page_transition.dart';
 import 'package:flutter/material.dart';
+import 'widgets/interactive_scale.dart';
+import 'widgets/animated_press_button.dart';
 
 import '../utils/responsive.dart';
 
 import 'sign_up_page.dart';
+import 'widgets/particles_painter.dart';
 import 'forgot_password_page.dart';
 import 'home_page.dart';
 import '../services/auth_service.dart';
@@ -42,8 +45,10 @@ class _SignInPageState extends State<SignInPage>
       CurvedAnimation(parent: _animationController, curve: Curves.easeOut),
     );
 
-    _slideAnimation = Tween<Offset>(begin: const Offset(0, 0.2), end: Offset.zero).animate(
-      CurvedAnimation(parent: _animationController, curve: Curves.easeOutCubic),
+    _slideAnimation =
+        Tween<Offset>(begin: const Offset(0, 0.2), end: Offset.zero).animate(
+      CurvedAnimation(
+          parent: _animationController, curve: Curves.easeOutCubic),
     );
 
     _animationController.forward();
@@ -66,9 +71,7 @@ class _SignInPageState extends State<SignInPage>
   bool get isArabic => _currentLanguage == 'ar';
 
   Future<void> _signIn() async {
-    if (!_formKey.currentState!.validate()) {
-      return;
-    }
+    if (!_formKey.currentState!.validate()) return;
 
     setState(() {
       _isLoading = true;
@@ -82,11 +85,14 @@ class _SignInPageState extends State<SignInPage>
       );
 
       if (mounted) {
-        _showSuccessSnackBar(isArabic ? 'تم تسجيل الدخول بنجاح' : 'Login successful');
+        _showSuccessSnackBar(
+            isArabic ? 'تم تسجيل الدخول بنجاح' : 'Login successful');
 
         Navigator.pushReplacement(
           context,
-          PageTransition(child: const HomePage(), type: PageTransitionType.slideFromRight),
+          PageTransition(
+              child: const HomePage(),
+              type: PageTransitionType.slideFromRight),
         );
       }
     } catch (e) {
@@ -94,14 +100,11 @@ class _SignInPageState extends State<SignInPage>
         setState(() {
           _errorMessage = e.toString().replaceAll('Exception: ', '');
         });
-
         _showErrorSnackBar(e.toString().replaceAll('Exception: ', ''));
       }
     } finally {
       if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
+        setState(() => _isLoading = false);
       }
     }
   }
@@ -109,13 +112,11 @@ class _SignInPageState extends State<SignInPage>
   void _showSuccessSnackBar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Row(
-          children: [
-            const Icon(Icons.check_circle, color: Colors.white, size: 20),
-            const SizedBox(width: 12),
-            Expanded(child: Text(message)),
-          ],
-        ),
+        content: Row(children: [
+          const Icon(Icons.check_circle, color: Colors.white, size: 20),
+          const SizedBox(width: 12),
+          Expanded(child: Text(message)),
+        ]),
         backgroundColor: Colors.green,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -127,13 +128,11 @@ class _SignInPageState extends State<SignInPage>
   void _showErrorSnackBar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Row(
-          children: [
-            const Icon(Icons.error_outline, color: Colors.white, size: 20),
-            const SizedBox(width: 12),
-            Expanded(child: Text(message)),
-          ],
-        ),
+        content: Row(children: [
+          const Icon(Icons.error_outline, color: Colors.white, size: 20),
+          const SizedBox(width: 12),
+          Expanded(child: Text(message)),
+        ]),
         backgroundColor: Colors.red,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -159,15 +158,11 @@ class _SignInPageState extends State<SignInPage>
                 opacity: _fadeAnimation,
                 child: Container(
                   width: double.infinity,
-                  height: 320,
                   decoration: BoxDecoration(
                     gradient: const LinearGradient(
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
-                      colors: [
-                        Color(0xFF6366F1),
-                        Color(0xFF8B5CF6),
-                      ],
+                      colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
                     ),
                     borderRadius: const BorderRadius.only(
                       bottomLeft: Radius.circular(40),
@@ -181,53 +176,82 @@ class _SignInPageState extends State<SignInPage>
                       ),
                     ],
                   ),
-                  child: SafeArea(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        TweenAnimationBuilder(
-                          tween: Tween<double>(begin: 0, end: 1),
-                          duration: const Duration(milliseconds: 600),
-                          builder: (context, double value, child) {
-                            return Transform.scale(
-                              scale: value,
-                              child: Container(
-                                padding: const EdgeInsets.all(20),
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withOpacity(0.2),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: const Icon(
-                                  Icons.description_rounded,
-                                  size: 64,
+                  // ✅ Stack بدون height ثابت — بياخد حجمه من SafeArea + Padding
+                  child: Stack(
+                    children: [
+                      /// ✅ Content أولاً — يعطي الـ Stack حجمه
+                      SizedBox(
+                        width: double.infinity,
+                        child: SafeArea(
+                        bottom: false,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 32),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              TweenAnimationBuilder(
+                                tween: Tween<double>(begin: 0, end: 1),
+                                duration: const Duration(milliseconds: 600),
+                                builder: (context, double value, child) {
+                                  return Transform.scale(
+                                    scale: value,
+                                    child: Container(
+                                      padding: const EdgeInsets.all(20),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white.withOpacity(0.2),
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: const Icon(
+                                        Icons.description_rounded,
+                                        size: 64,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                              const SizedBox(height: 24),
+                              Text(
+                                isArabic ? 'مرحبًا بعودتك' : 'Welcome Back',
+                                style: TextStyle(
+                                  fontSize: Responsive.fontSize(context, 32),
+                                  fontWeight: FontWeight.bold,
                                   color: Colors.white,
+                                  letterSpacing: -0.5,
                                 ),
                               ),
-                            );
-                          },
-                        ),
-                        const SizedBox(height: 24),
-                        Text(
-                          isArabic ? 'مرحبًا بعودتك' : 'Welcome Back',
-                          style: const TextStyle(
-                            fontSize: 32,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                            letterSpacing: -0.5,
+                              const SizedBox(height: 8),
+                              Text(
+                                isArabic
+                                    ? 'سجل الدخول إلى حسابك'
+                                    : 'Sign in to your account',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  color: Colors.white.withOpacity(0.9),
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                            ],
                           ),
                         ),
-                        const SizedBox(height: 8),
-                        Text(
-                          isArabic
-                              ? 'سجل الدخول إلى حسابك'
-                              : 'Sign in to your account',
-                          style: TextStyle(
-                            fontSize: 16,
-                            color: Colors.white.withOpacity(0.9),
+                      ),
+                      ),
+
+                      /// ✅ Particles فوق الـ content — Positioned.fill شغّال لأن الـ Stack عنده حجم
+                      Positioned.fill(
+                        child: IgnorePointer(
+                          child: ClipRRect(
+                            borderRadius: const BorderRadius.only(
+                              bottomLeft: Radius.circular(40),
+                              bottomRight: Radius.circular(40),
+                            ),
+                            child: const ParticlesLayer(count: 20),
                           ),
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -235,276 +259,301 @@ class _SignInPageState extends State<SignInPage>
               /// ===== Form =====
               Center(
                 child: ConstrainedBox(
-                  constraints: BoxConstraints(maxWidth: Responsive.maxWidth(context)),
+                  constraints:
+                      BoxConstraints(maxWidth: Responsive.maxWidth(context)),
                   child: Padding(
                     padding: const EdgeInsets.all(24.0),
                     child: SlideTransition(
-                  position: _slideAnimation,
-                  child: Form(
-                    key: _formKey,
-                    child: Column(
-                      children: [
-                        const SizedBox(height: 24),
+                      position: _slideAnimation,
+                      child: Form(
+                        key: _formKey,
+                        child: Column(
+                          children: [
+                            const SizedBox(height: 24),
 
-                        /// Error Message with animation
-                        if (_errorMessage != null)
-                          TweenAnimationBuilder(
-                            tween: Tween<double>(begin: 0, end: 1),
-                            duration: const Duration(milliseconds: 300),
-                            builder: (context, double value, child) {
-                              return Transform.translate(
-                                offset: Offset(0, (1 - value) * -20),
-                                child: Opacity(
-                                  opacity: value,
-                                  child: Container(
-                                    padding: const EdgeInsets.all(16),
-                                    decoration: BoxDecoration(
-                                      color: Colors.red.shade50,
-                                      borderRadius: BorderRadius.circular(16),
-                                      border: Border.all(color: Colors.red.shade200),
-                                    ),
-                                    child: Row(
-                                      children: [
-                                        Icon(Icons.error_outline, color: Colors.red.shade700),
-                                        const SizedBox(width: 12),
-                                        Expanded(
-                                          child: Text(
-                                            _errorMessage!,
-                                            style: TextStyle(color: Colors.red.shade700),
-                                          ),
+                            if (_errorMessage != null)
+                              TweenAnimationBuilder(
+                                tween: Tween<double>(begin: 0, end: 1),
+                                duration: const Duration(milliseconds: 300),
+                                builder: (context, double value, child) {
+                                  return Transform.translate(
+                                    offset: Offset(0, (1 - value) * -20),
+                                    child: Opacity(
+                                      opacity: value,
+                                      child: Container(
+                                        padding: const EdgeInsets.all(16),
+                                        decoration: BoxDecoration(
+                                          color: Colors.red.shade50,
+                                          borderRadius:
+                                              BorderRadius.circular(16),
+                                          border: Border.all(
+                                              color: Colors.red.shade200),
                                         ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-
-                        if (_errorMessage != null) const SizedBox(height: 20),
-
-                        /// Email Field
-                        _inputContainer(
-                          theme,
-                          child: TextFormField(
-                            controller: _emailController,
-                            style: theme.textTheme.bodyLarge,
-                            keyboardType: TextInputType.emailAddress,
-                            textInputAction: TextInputAction.next,
-                            enabled: !_isLoading,
-                            validator: (value) {
-                              if (value == null || value.isEmpty) {
-                                return isArabic ? 'البريد الإلكتروني مطلوب' : 'Email is required';
-                              }
-                              if (!value.contains('@') || !value.contains('.')) {
-                                return isArabic ? 'البريد الإلكتروني غير صحيح' : 'Email is invalid';
-                              }
-                              return null;
-                            },
-                            decoration: InputDecoration(
-                              labelText: isArabic ? 'البريد الإلكتروني' : 'Email Address',
-                              prefixIcon: Icon(
-                                Icons.email_rounded,
-                                color: theme.primaryColor,
-                              ),
-                              border: InputBorder.none,
-                              contentPadding: const EdgeInsets.all(20),
-                              focusedBorder: InputBorder.none,
-                              enabledBorder: InputBorder.none,
-                            ),
-                          ),
-                        ),
-
-                        const SizedBox(height: 20),
-
-                        /// Password Field
-                        _inputContainer(
-                          theme,
-                          child: TextFormField(
-                            controller: _passwordController,
-                            obscureText: _obscurePassword,
-                            style: theme.textTheme.bodyLarge,
-                            textInputAction: TextInputAction.done,
-                            enabled: !_isLoading,
-                            validator: (value) {
-                              if (value == null || value.isEmpty) {
-                                return isArabic ? 'كلمة المرور مطلوبة' : 'Password is required';
-                              }
-                              if (value.length < 6) {
-                                return isArabic ? 'كلمة المرور يجب أن تكون 6 أحرف على الأقل' : 'Password must be at least 6 characters';
-                              }
-                              return null;
-                            },
-                            decoration: InputDecoration(
-                              labelText: isArabic ? 'كلمة المرور' : 'Password',
-                              prefixIcon: Icon(
-                                Icons.lock_rounded,
-                                color: theme.primaryColor,
-                              ),
-                              suffixIcon: IconButton(
-                                icon: Icon(
-                                  _obscurePassword
-                                      ? Icons.visibility_off_rounded
-                                      : Icons.visibility_rounded,
-                                  color: theme.primaryColor,
-                                ),
-                                onPressed: () {
-                                  setState(() {
-                                    _obscurePassword = !_obscurePassword;
-                                  });
-                                },
-                              ),
-                              border: InputBorder.none,
-                              contentPadding: const EdgeInsets.all(20),
-                              focusedBorder: InputBorder.none,
-                              enabledBorder: InputBorder.none,
-                            ),
-                          ),
-                        ),
-
-                        const SizedBox(height: 16),
-
-                        /// Forgot Password
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: TextButton(
-                            onPressed: _isLoading ? null : () {
-                              Navigator.push(
-                                context,
-                                PageTransition(
-                                  child: const ForgotPasswordPage(),
-                                  type: PageTransitionType.slideFromRight,
-                                ),
-                              );
-                            },
-                            style: TextButton.styleFrom(
-                              foregroundColor: const Color(0xFF6366F1),
-                            ),
-                            child: Text(isArabic ? 'نسيت كلمة المرور؟' : 'Forgot Password?'),
-                          ),
-                        ),
-
-                        const SizedBox(height: 32),
-
-                        /// Sign In Button
-                        TweenAnimationBuilder(
-                          tween: Tween<double>(begin: 0, end: 1),
-                          duration: const Duration(milliseconds: 700),
-                          builder: (context, double value, child) {
-                            return Transform.translate(
-                              offset: Offset(0, (1 - value) * 40),
-                              child: Opacity(
-                                opacity: value,
-                                child: SizedBox(
-                                  width: double.infinity,
-                                  height: 56,
-                                  child: GestureDetector(
-                                    onTap: _isLoading ? null : _signIn,
-                                    child: AnimatedContainer(
-                                      duration: const Duration(milliseconds: 300),
-                                      decoration: BoxDecoration(
-                                        gradient: _isLoading
-                                            ? LinearGradient(
-                                          colors: [Colors.grey.shade400, Colors.grey.shade500],
-                                        )
-                                            : const LinearGradient(
-                                          begin: Alignment.topLeft,
-                                          end: Alignment.bottomRight,
-                                          colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
-                                        ),
-                                        borderRadius: BorderRadius.circular(20),
-                                        boxShadow: _isLoading
-                                            ? []
-                                            : [
-                                          BoxShadow(
-                                            color: const Color(0xFF6366F1).withOpacity(0.4),
-                                            blurRadius: 20,
-                                            offset: const Offset(0, 8),
-                                          ),
-                                        ],
-                                      ),
-                                      child: Center(
-                                        child: _isLoading
-                                            ? const SizedBox(
-                                          width: 24,
-                                          height: 24,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2.5,
-                                            valueColor: AlwaysStoppedAnimation(Colors.white),
-                                          ),
-                                        )
-                                            : Row(
-                                          mainAxisAlignment: MainAxisAlignment.center,
+                                        child: Row(
                                           children: [
-                                            const Icon(
-                                              Icons.login_rounded,
-                                              color: Colors.white,
-                                              size: 20,
-                                            ),
-                                            const SizedBox(width: 10),
-                                            Text(
-                                              isArabic ? 'تسجيل الدخول' : 'Sign In',
-                                              style: const TextStyle(
-                                                color: Colors.white,
-                                                fontWeight: FontWeight.w600,
-                                                fontSize: 16,
-                                                letterSpacing: -0.3,
-                                              ),
+                                            Icon(Icons.error_outline,
+                                                color: Colors.red.shade700),
+                                            const SizedBox(width: 12),
+                                            Expanded(
+                                              child: Text(_errorMessage!,
+                                                  style: TextStyle(
+                                                      color:
+                                                          Colors.red.shade700)),
                                             ),
                                           ],
                                         ),
                                       ),
                                     ),
-                                  ),
+                                  );
+                                },
+                              ),
+
+                            if (_errorMessage != null)
+                              const SizedBox(height: 20),
+
+                            _inputContainer(
+                              theme,
+                              child: TextFormField(
+                                controller: _emailController,
+                                style: theme.textTheme.bodyLarge,
+                                keyboardType: TextInputType.emailAddress,
+                                textInputAction: TextInputAction.next,
+                                enabled: !_isLoading,
+                                validator: (value) {
+                                  if (value == null || value.isEmpty) {
+                                    return isArabic
+                                        ? 'البريد الإلكتروني مطلوب'
+                                        : 'Email is required';
+                                  }
+                                  if (!value.contains('@') ||
+                                      !value.contains('.')) {
+                                    return isArabic
+                                        ? 'البريد الإلكتروني غير صحيح'
+                                        : 'Email is invalid';
+                                  }
+                                  return null;
+                                },
+                                decoration: InputDecoration(
+                                  labelText: isArabic
+                                      ? 'البريد الإلكتروني'
+                                      : 'Email Address',
+                                  prefixIcon: Icon(Icons.email_rounded,
+                                      color: theme.primaryColor),
+                                  border: InputBorder.none,
+                                  contentPadding: const EdgeInsets.all(20),
+                                  focusedBorder: InputBorder.none,
+                                  enabledBorder: InputBorder.none,
                                 ),
                               ),
-                            );
-                          },
-                        ),
+                            ),
 
-                        const SizedBox(height: 32),
+                            const SizedBox(height: 20),
 
-                        /// Sign Up
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              isArabic
-                                  ? 'ليس لديك حساب؟'
-                                  : "Don't have an account?",
-                              style: theme.textTheme.bodyMedium?.copyWith(
-                                color: Colors.grey[600],
+                            _inputContainer(
+                              theme,
+                              child: TextFormField(
+                                controller: _passwordController,
+                                obscureText: _obscurePassword,
+                                style: theme.textTheme.bodyLarge,
+                                textInputAction: TextInputAction.done,
+                                enabled: !_isLoading,
+                                validator: (value) {
+                                  if (value == null || value.isEmpty) {
+                                    return isArabic
+                                        ? 'كلمة المرور مطلوبة'
+                                        : 'Password is required';
+                                  }
+                                  if (value.length < 6) {
+                                    return isArabic
+                                        ? 'كلمة المرور يجب أن تكون 6 أحرف على الأقل'
+                                        : 'Password must be at least 6 characters';
+                                  }
+                                  return null;
+                                },
+                                decoration: InputDecoration(
+                                  labelText:
+                                      isArabic ? 'كلمة المرور' : 'Password',
+                                  prefixIcon: Icon(Icons.lock_rounded,
+                                      color: theme.primaryColor),
+                                  suffixIcon: IconButton(
+                                    icon: Icon(
+                                      _obscurePassword
+                                          ? Icons.visibility_off_rounded
+                                          : Icons.visibility_rounded,
+                                      color: theme.primaryColor,
+                                    ),
+                                    onPressed: () => setState(
+                                        () => _obscurePassword = !_obscurePassword),
+                                  ),
+                                  border: InputBorder.none,
+                                  contentPadding: const EdgeInsets.all(20),
+                                  focusedBorder: InputBorder.none,
+                                  enabledBorder: InputBorder.none,
+                                ),
                               ),
                             ),
-                            TextButton(
-                              onPressed: _isLoading ? null : () {
-                                Navigator.push(
-                                  context,
-                                  PageTransition(
-                                    child: const SignUpPage(),
-                                    type: PageTransitionType.slideFromRight,
+
+                            const SizedBox(height: 16),
+
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: TextButton(
+                                onPressed: _isLoading
+                                    ? null
+                                    : () {
+                                        Navigator.push(
+                                          context,
+                                          PageTransition(
+                                            child: const ForgotPasswordPage(),
+                                            type: PageTransitionType
+                                                .slideFromRight,
+                                          ),
+                                        );
+                                      },
+                                style: TextButton.styleFrom(
+                                    foregroundColor: const Color(0xFF6366F1)),
+                                child: Text(isArabic
+                                    ? 'نسيت كلمة المرور؟'
+                                    : 'Forgot Password?'),
+                              ),
+                            ),
+
+                            const SizedBox(height: 32),
+
+                            TweenAnimationBuilder(
+                              tween: Tween<double>(begin: 0, end: 1),
+                              duration: const Duration(milliseconds: 700),
+                              builder: (context, double value, child) {
+                                return Transform.translate(
+                                  offset: Offset(0, (1 - value) * 40),
+                                  child: Opacity(
+                                    opacity: value,
+                                    child: InteractiveScale(
+                                      onTap: _isLoading ? null : _signIn,
+                                      child: SizedBox(
+                                        width: double.infinity,
+                                        height: 56,
+                                        child: AnimatedContainer(
+                                          duration: const Duration(
+                                              milliseconds: 300),
+                                          decoration: BoxDecoration(
+                                            gradient: _isLoading
+                                                ? LinearGradient(colors: [
+                                                    Colors.grey.shade400,
+                                                    Colors.grey.shade500,
+                                                  ])
+                                                : const LinearGradient(
+                                                    begin: Alignment.topLeft,
+                                                    end: Alignment.bottomRight,
+                                                    colors: [
+                                                      Color(0xFF6366F1),
+                                                      Color(0xFF8B5CF6),
+                                                    ],
+                                                  ),
+                                            borderRadius:
+                                                BorderRadius.circular(20),
+                                            boxShadow: _isLoading
+                                                ? []
+                                                : [
+                                                    BoxShadow(
+                                                      color: const Color(
+                                                              0xFF6366F1)
+                                                          .withOpacity(0.4),
+                                                      blurRadius: 20,
+                                                      offset:
+                                                          const Offset(0, 8),
+                                                    ),
+                                                  ],
+                                          ),
+                                          child: Center(
+                                            child: _isLoading
+                                                ? const SizedBox(
+                                                    width: 24,
+                                                    height: 24,
+                                                    child:
+                                                        CircularProgressIndicator(
+                                                      strokeWidth: 2.5,
+                                                      valueColor:
+                                                          AlwaysStoppedAnimation(
+                                                              Colors.white),
+                                                    ),
+                                                  )
+                                                : Row(
+                                                    mainAxisAlignment:
+                                                        MainAxisAlignment
+                                                            .center,
+                                                    children: [
+                                                      const Icon(
+                                                          Icons.login_rounded,
+                                                          color: Colors.white,
+                                                          size: 20),
+                                                      const SizedBox(width: 10),
+                                                      Text(
+                                                        isArabic
+                                                            ? 'تسجيل الدخول'
+                                                            : 'Sign In',
+                                                        style: const TextStyle(
+                                                          color: Colors.white,
+                                                          fontWeight:
+                                                              FontWeight.w600,
+                                                          fontSize: 16,
+                                                          letterSpacing: -0.3,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
                                   ),
                                 );
                               },
-                              style: TextButton.styleFrom(
-                                foregroundColor: const Color(0xFF6366F1),
-                              ),
-                              child: Text(
-                                isArabic ? 'سجل الآن' : 'Sign Up',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w600,
+                            ),
+
+                            const SizedBox(height: 32),
+
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text(
+                                  isArabic
+                                      ? 'ليس لديك حساب؟'
+                                      : "Don't have an account?",
+                                  style: theme.textTheme.bodyMedium
+                                      ?.copyWith(color: Colors.grey[600]),
                                 ),
-                              ),
+                                TextButton(
+                                  onPressed: _isLoading
+                                      ? null
+                                      : () {
+                                          Navigator.push(
+                                            context,
+                                            PageTransition(
+                                              child: const SignUpPage(),
+                                              type: PageTransitionType
+                                                  .slideFromRight,
+                                            ),
+                                          );
+                                        },
+                                  style: TextButton.styleFrom(
+                                      foregroundColor:
+                                          const Color(0xFF6366F1)),
+                                  child: Text(
+                                    isArabic ? 'سجل الآن' : 'Sign Up',
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.w600),
+                                  ),
+                                ),
+                              ],
                             ),
                           ],
                         ),
-                      ],
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-            ),
             ],
           ),
         ),
@@ -512,7 +561,6 @@ class _SignInPageState extends State<SignInPage>
     );
   }
 
-  /// ===== Input Container =====
   Widget _inputContainer(ThemeData theme, {required Widget child}) {
     return Container(
       decoration: BoxDecoration(
@@ -532,4 +580,3 @@ class _SignInPageState extends State<SignInPage>
     );
   }
 }
-

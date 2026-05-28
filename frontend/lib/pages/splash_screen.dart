@@ -1,6 +1,8 @@
 import 'page_transition.dart';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'widgets/interactive_scale.dart';
+import 'widgets/animated_press_button.dart';
 import '../utils/responsive.dart';
 
 import 'package:shared_preferences/shared_preferences.dart';
@@ -151,33 +153,36 @@ class _SplashScreenState extends State<SplashScreen>
     _checkAuth();
   }
 
-  Future<void> _checkAuth() async {
-    await Future.delayed(const Duration(seconds: 4));
+Future<void> _checkAuth() async {
+  await Future.delayed(const Duration(seconds: 4));
+  final prefs = await SharedPreferences.getInstance();
+  final token = prefs.getString('auth_token');
 
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('auth_token');
+  if (!mounted) return;
+
+  if (token != null) {
+    final apiService = ApiService();
+    final newToken = await apiService.refreshToken(token);
 
     if (!mounted) return;
 
-    if (token != null) {
-      final apiService = ApiService();
-      final newToken = await apiService.refreshToken(token);
-
-      if (!mounted) return;
-
-      if (newToken != null) {
-        Navigator.pushReplacement(
-          context,
-          PageTransition(child: const HomePage(), type: PageTransitionType.fade),
-        );
-      } else {
-        Navigator.pushReplacement(
-          context,
-          PageTransition(child: const SignInPage(), type: PageTransitionType.fade),
-        );
-      }
+    if (newToken != null) {
+      Navigator.pushReplacement(
+        context,
+        PageTransition(child: const HomePage(), type: PageTransitionType.fade),
+      );
+      return;
     }
   }
+
+  // ✅ دايماً يروح SignInPage لو مفيش token صالح
+  if (mounted) {
+    Navigator.pushReplacement(
+      context,
+      PageTransition(child: const SignInPage(), type: PageTransitionType.fade),
+    );
+  }
+}
 
   @override
   void dispose() {
@@ -330,10 +335,10 @@ class _SplashScreenState extends State<SplashScreen>
                                                 ],
                                               ).createShader(bounds);
                                             },
-                                            child: const Text(
+                                            child: Text(
                                               'SmartPDF',
                                               style: TextStyle(
-                                                fontSize: 52,
+                                                fontSize: Responsive.fontSize(context, 52),
                                                 fontWeight: FontWeight.bold,
                                                 color: Colors.white,
                                                 letterSpacing: -1.5,
@@ -401,7 +406,7 @@ class _SplashScreenState extends State<SplashScreen>
                                         child: SizedBox(
                                           width: double.infinity,
                                           height: 54,
-                                          child: GestureDetector(
+                                          child: AnimatedPressButton(
                                             onTap: () {
                                               Navigator.pushReplacement(
                                                 context,
@@ -411,22 +416,21 @@ class _SplashScreenState extends State<SplashScreen>
                                                 ),
                                               );
                                             },
-                                            child: Container(
-                                              decoration: BoxDecoration(
-                                                gradient: const LinearGradient(
-                                                  begin: Alignment.topLeft,
-                                                  end: Alignment.bottomRight,
-                                                  colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
-                                                ),
-                                                borderRadius: BorderRadius.circular(20),
-                                                boxShadow: [
-                                                  BoxShadow(
-                                                    color: const Color(0xFF6366F1).withOpacity(0.4),
-                                                    blurRadius: 20,
-                                                    offset: const Offset(0, 8),
-                                                  ),
-                                                ],
+                                            decoration: BoxDecoration(
+                                              gradient: const LinearGradient(
+                                                begin: Alignment.topLeft,
+                                                end: Alignment.bottomRight,
+                                                colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
                                               ),
+                                              borderRadius: BorderRadius.circular(20),
+                                              boxShadow: [
+                                                BoxShadow(
+                                                  color: const Color(0xFF6366F1).withOpacity(0.4),
+                                                  blurRadius: 20,
+                                                  offset: const Offset(0, 8),
+                                                ),
+                                              ],
+                                            ),
                                               child: Center(
                                                 child: Row(
                                                   mainAxisAlignment: MainAxisAlignment.center,
@@ -449,7 +453,6 @@ class _SplashScreenState extends State<SplashScreen>
                                           ),
                                         ),
                                       ),
-                                    ),
 
                                     const SizedBox(height: 14),
 
@@ -461,7 +464,7 @@ class _SplashScreenState extends State<SplashScreen>
                                         child: SizedBox(
                                           width: double.infinity,
                                           height: 54,
-                                          child: GestureDetector(
+                                          child: InteractiveScale(
                                             onTap: () {
                                               Navigator.pushReplacement(
                                                 context,

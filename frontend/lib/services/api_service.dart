@@ -12,7 +12,7 @@ class ApiService {
   }
 
   late Dio dio;
-  static const String baseUrl = "https://grant-aplitic-dhooly.ngrok-free.dev/api";
+  static const String baseUrl = "http://localhost:8000/api";
   bool _initialized = false;
   bool _isRefreshing = false;
 

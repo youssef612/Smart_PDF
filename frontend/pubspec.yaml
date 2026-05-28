@@ -12,7 +12,7 @@ dependencies:
     sdk: flutter
   flutter_markdown: ^0.7.3
   flutter_math_fork: ^0.7.2
-  pdf: "3.10.8"
+  pdf: "^3.12.0"
   printing: ^5.12.0
   docx_template: ^0.3.2
   archive: ^3.4.10
@@ -40,6 +40,8 @@ dependencies:
   window_manager: ^0.5.1
   desktop_drop: ^0.7.1
   http: ^1.6.0
+  bidi: ^2.0.13
+  arabic_reshaper: ^0.0.1
 
 dev_dependencies:
   flutter_test:
@@ -69,3 +71,4 @@ flutter:
     - family: NotoSansMath
       fonts:
         - asset: assets/fonts/NotoSansMath-Regular.ttf
+    

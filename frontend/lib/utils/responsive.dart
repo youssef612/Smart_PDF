@@ -23,4 +23,10 @@ class Responsive {
     if (isTablet(context)) return const EdgeInsets.all(24);
     return const EdgeInsets.all(32);
   }
+
+  static double fontSize(BuildContext context, double mobile) {
+    if (isDesktop(context)) return mobile * 1.15;
+    if (isTablet(context))  return mobile * 1.08;
+    return mobile;
+  }
 }
