@@ -1,0 +1,39 @@
+```json
+{
+  "pages": "page 3",
+  "main_topic": "Conversion between Initial Value Problems (IVPs) and Volterra Integral Equations (VIEs)",
+  "summary": "This section details the methods for converting between Initial Value Problems (IVPs) and Volterra Integral Equations (VIEs). It begins with the Leibnitz rule, which allows for the differentiation of an integral to obtain an equation involving the derivative of the integrand. The key theorem is the general formula for converting multiple integrals to a single integral, which is crucial for the conversion process. The conversion from IVPs to VIEs involves integrating the differential equation and applying the Leibnitz rule to obtain a VIE of the second kind. Conversely, the conversion from VIEs to IVPs involves substituting the expression for the integrand into the original differential equation. The conversion is based on the substitution of the integral representation of the solution into the differential equation, leading to a new equation that can be solved for the unknown function.",
+  "key_concepts": [
+    {
+      "term": "Leibniz Rule",
+      "explanation": "The Leibnitz rule provides a method for differentiating an integral. It states that if $\phi(s) = \int_{A(s)}^{B(s)} f(s,t)dt$, then $\frac{d\phi(s)}{ds} = \int_{A(s)}^{B(s)} \frac{\partial f(s,t)}{\partial s} dt + f(s,B(s)) \frac{dB}{ds} - f(s,A(s)) \frac{dA}{ds}$."
+    },
+    {
+      "term": "Volterra Integral Equation",
+      "explanation": "A Volterra integral equation is an equation of the form $\phi(s) = f(s) + \int_{0}^{s} K(s,t)\phi(t)dt$, where $f(s)$ is the known function and $K(s,t)$ is the kernel function."
+    },
+    {
+      "term": "Initial Value Problem (IVP)",
+      "explanation": "An IVP is a differential equation along with initial conditions, typically of the form $y''(x) + p(x)y'(x) + q(x)y(x) = h(x)$ with $y(0) = \alpha$ and $y'(0) = \beta$."
+    },
+    {
+      "term": "Conversion Theorem",
+      "explanation": "The conversion theorem provides a method for transforming between IVPs and VIEs by integrating the differential equation and applying the Leibnitz rule to obtain a VIE of the second kind, or by substituting the integral representation of the solution into the original differential equation to obtain a new equation that can be solved for the unknown function."
+    }
+  ],
+  "theorems": [
+    {
+      "name": "Leibniz Rule",
+      "statement": "Assume that $f(s,t)$ and its derivative $\frac{\partial f}{\partial t}$ are continuous in a domain on the plane $st$ where $A(s) \leq s \leq B(s)$ and $t_0 \leq t \leq t_1$. If $\phi(s) = \int_{A(s)}^{B(s)} f(s,t)dt$, then the differentiation of Eq.(2.6) is given by $\frac{d\phi(s)}{ds} = \int_{A(s)}^{B(s)} \frac{\partial f(s,t)}{\partial s} dt + f(s,B(s)) \frac{dB}{ds} - f(s,A(s)) \frac{dA}{ds}$.",
+      "significance": "This rule is fundamental for differentiating integrals and is essential for converting between different types of equations."
+    },
+    {
+      "name": "General Formula for Multiple Integrals",
+      "statement": "$\int_{a}^{x} \int_{a}^{x_{1}} \cdots \int_{a}^{x_{n-1}} u(x_{n}) dx_{n} dx_{n-1} \cdots dx_{1} = \frac{1}{(n-1)!} \int_{a}^{x} (x-t)^{n-1} u(t) dt$",
+      "significance": "This theorem provides a powerful tool for simplifying multiple integrals, which is crucial for solving complex equations."
+    }
+  ],
+  "formulas": [
+    {
+      "formula": "Leibniz Rule",
+      "variables": "s
