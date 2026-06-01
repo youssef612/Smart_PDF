@@ -20,93 +20,103 @@ class ApiService {
     if (_initialized) return;
     _initialized = true;
 
-    dio = Dio(BaseOptions(
-      baseUrl: baseUrl,
-      connectTimeout: const Duration(minutes: 15),
-      receiveTimeout: const Duration(hours: 24),
-      headers: {
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-        'ngrok-skip-browser-warning': 'true',
-      },
-    ));
+    dio = Dio(
+      BaseOptions(
+        baseUrl: baseUrl,
+        connectTimeout: const Duration(minutes: 15),
+        receiveTimeout: const Duration(hours: 24),
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true',
+        },
+      ),
+    );
 
-    dio.interceptors.add(InterceptorsWrapper(
-      onRequest: (options, handler) async {
-        final prefs = await SharedPreferences.getInstance();
-        final token = prefs.getString('auth_token');
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) async {
+          final prefs = await SharedPreferences.getInstance();
+          final token = prefs.getString('auth_token');
 
-        if (token != null) {
-          // ✅ افحص لو التوكن هينتهي خلال 5 دقايق
-          final expiry = prefs.getInt('token_expiry');
-          if (expiry != null && !_isRefreshing) {
-            final expiryTime = DateTime.fromMillisecondsSinceEpoch(expiry);
-            final timeLeft = expiryTime.difference(DateTime.now());
+          if (token != null) {
+            // ✅ افحص لو التوكن هينتهي خلال 5 دقايق
+            final expiry = prefs.getInt('token_expiry');
+            if (expiry != null && !_isRefreshing) {
+              final expiryTime = DateTime.fromMillisecondsSinceEpoch(expiry);
+              final timeLeft = expiryTime.difference(DateTime.now());
 
-            if (timeLeft.inMinutes <= 5) {
-              debugPrint('⏰ Token expires in ${timeLeft.inMinutes} min, refreshing...');
-              final newToken = await _refreshToken(token);
-              if (newToken != null) {
-                options.headers['Authorization'] = 'Bearer $newToken';
-                return handler.next(options);
+              if (timeLeft.inMinutes <= 5) {
+                debugPrint(
+                  '⏰ Token expires in ${timeLeft.inMinutes} min, refreshing...',
+                );
+                final newToken = await _refreshToken(token);
+                if (newToken != null) {
+                  options.headers['Authorization'] = 'Bearer $newToken';
+                  return handler.next(options);
+                }
               }
             }
+
+            options.headers['Authorization'] = 'Bearer $token';
+            debugPrint(
+              '🔑 Token added to request: ${options.method} ${options.path}',
+            );
+          } else {
+            debugPrint('⚠️ No token for: ${options.method} ${options.path}');
           }
 
-          options.headers['Authorization'] = 'Bearer $token';
-          debugPrint('🔑 Token added to request: ${options.method} ${options.path}');
-        } else {
-          debugPrint('⚠️ No token for: ${options.method} ${options.path}');
-        }
+          debugPrint('🌐 Request: ${options.method} ${options.path}');
+          debugPrint('📦 Headers: ${options.headers}');
+          return handler.next(options);
+        },
 
-        debugPrint('🌐 Request: ${options.method} ${options.path}');
-        debugPrint('📦 Headers: ${options.headers}');
-        return handler.next(options);
-      },
+        onResponse: (response, handler) {
+          debugPrint(
+            '✅ Response: ${response.statusCode} - ${response.requestOptions.path}',
+          );
+          return handler.next(response);
+        },
 
-      onResponse: (response, handler) {
-        debugPrint('✅ Response: ${response.statusCode} - ${response.requestOptions.path}');
-        return handler.next(response);
-      },
+        onError: (DioException e, handler) async {
+          // ✅ لو جه 401 → جرب refresh تلقائي
+          if (e.response?.statusCode == 401 && !_isRefreshing) {
+            debugPrint('🔄 Got 401, trying to refresh token...');
 
-      onError: (DioException e, handler) async {
-        // ✅ لو جه 401 → جرب refresh تلقائي
-        if (e.response?.statusCode == 401 && !_isRefreshing) {
-          debugPrint('🔄 Got 401, trying to refresh token...');
+            final prefs = await SharedPreferences.getInstance();
+            final oldToken = prefs.getString('auth_token');
 
-          final prefs = await SharedPreferences.getInstance();
-          final oldToken = prefs.getString('auth_token');
+            if (oldToken != null) {
+              final newToken = await _refreshToken(oldToken);
 
-          if (oldToken != null) {
-            final newToken = await _refreshToken(oldToken);
+              if (newToken != null) {
+                // ✅ أعد الـ request الأصلي بالتوكن الجديد
+                debugPrint('✅ Retrying original request with new token...');
+                final retryOptions = e.requestOptions;
+                retryOptions.headers['Authorization'] = 'Bearer $newToken';
 
-            if (newToken != null) {
-              // ✅ أعد الـ request الأصلي بالتوكن الجديد
-              debugPrint('✅ Retrying original request with new token...');
-              final retryOptions = e.requestOptions;
-              retryOptions.headers['Authorization'] = 'Bearer $newToken';
-
-              try {
-                final retryResponse = await dio.fetch(retryOptions);
-                return handler.resolve(retryResponse);
-              } catch (_) {
+                try {
+                  final retryResponse = await dio.fetch(retryOptions);
+                  return handler.resolve(retryResponse);
+                } catch (_) {
+                  return handler.next(e);
+                }
+              } else {
+                // ❌ فشل الـ refresh → روح Login
+                debugPrint('❌ Refresh failed, forcing logout...');
+                await _forceLogout();
                 return handler.next(e);
               }
-            } else {
-              // ❌ فشل الـ refresh → روح Login
-              debugPrint('❌ Refresh failed, forcing logout...');
-              await _forceLogout();
-              return handler.next(e);
             }
           }
-        }
 
-        debugPrint('❌ Error: ${e.message}');
-        debugPrint('Status: ${e.response?.statusCode}');
-        debugPrint('URL: ${e.requestOptions.path}');
-        return handler.next(e);
-      },
-    ));
+          debugPrint('❌ Error: ${e.message}');
+          debugPrint('Status: ${e.response?.statusCode}');
+          debugPrint('URL: ${e.requestOptions.path}');
+          return handler.next(e);
+        },
+      ),
+    );
   }
 
   // ✅ دالة الـ Refresh (private)
@@ -131,14 +141,16 @@ class ApiService {
       }
 
       // استخدم Dio منفصل عشان ميدخلش في loop
-      final refreshDio = Dio(BaseOptions(
-        baseUrl: baseUrl,
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $currentToken',
-        },
-      ));
+      final refreshDio = Dio(
+        BaseOptions(
+          baseUrl: baseUrl,
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $currentToken',
+          },
+        ),
+      );
 
       final response = await refreshDio.post('/auth/refresh');
 
@@ -185,9 +197,7 @@ class ApiService {
     );
   }
 
-
-
-    // =========================
+  // =========================
   // 📂 HISTORY
   // =========================
   Future<List<dynamic>> getHistory() async {
@@ -220,6 +230,32 @@ class ApiService {
       return null;
     }
   }
+
+  // =========================
+  // 💬 CHAT CONVERSATIONS
+  // =========================
+
+  // جلب قائمة المحادثات
+  Future<Map<String, dynamic>> getConversations() async {
+    try {
+      final response = await dio.get('/conversations');
+      return response.data;
+    } catch (e) {
+      debugPrint('❌ getConversations error: $e');
+      return {'success': false, 'message': e.toString()};
+    }
+  }
+
+  // مسح محادثة
+  Future<Map<String, dynamic>> deleteConversation(String id) async {
+    try {
+      final response = await dio.delete('/conversations/$id');
+      return response.data;
+    } catch (e) {
+      debugPrint('❌ deleteConversation error: $e');
+      return {'success': false, 'message': e.toString()};
+    }
+  }
 }
 
 // Widget مؤقت للـ redirect لـ SignInPage
@@ -231,11 +267,6 @@ class _LoginRedirect extends StatelessWidget {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       Navigator.pushReplacementNamed(context, '/login');
     });
-    return const Scaffold(
-      body: Center(child: CircularProgressIndicator()),
-    );
+    return const Scaffold(body: Center(child: CircularProgressIndicator()));
   }
-
-
-  
 }

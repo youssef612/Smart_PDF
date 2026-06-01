@@ -709,7 +709,7 @@ class FilesController extends Controller
         }
 
         return response()->json(['success' => true, 'data' => ['reply' => $reply]]);
-}
+    }
 
     public function chat(Request $request, $id)
     {

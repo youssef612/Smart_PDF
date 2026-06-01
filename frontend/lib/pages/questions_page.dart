@@ -343,6 +343,10 @@ class _QuestionsPageState extends State<QuestionsPage>
   int? _selectedFromPage;
   int? _selectedToPage;
   int _totalPages = 0;
+
+  final TextEditingController _fromController = TextEditingController();
+  final TextEditingController _toController = TextEditingController();
+
   late String _currentLanguage;
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
@@ -439,62 +443,110 @@ class _QuestionsPageState extends State<QuestionsPage>
     int fromPage = _selectedFromPage ?? 1;
     int toPage = _selectedToPage ?? (_totalPages > 0 ? _totalPages : 1);
 
+    // تهيئة النص داخل الـ Controllers قبل فتح الديالوج مباشرة
+    _fromController.text = '$fromPage';
+    _toController.text = '$toPage';
+
     final result = await showDialog<Map<String, int>>(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setStateDialog) => AlertDialog(
-          title: Text(isArabic ? 'اختر نطاق الصفحات' : 'Select Page Range'),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
+          title: Text(
+            isArabic
+                ? 'اختر نطاق الصفحات للأسئلة'
+                : 'Select Page Range for Questions',
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                _totalPages > 0
-                    ? '${isArabic ? 'إجمالي الصفحات' : 'Total pages'}: $_totalPages'
-                    : (isArabic
-                          ? 'تعذر تحديد عدد الصفحات'
-                          : 'Page count unavailable'),
-                style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  color: _totalPages > 0 ? Color(0xFF6366F1) : Colors.orange,
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF6366F1).withOpacity(0.06),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  _totalPages > 0
+                      ? '${isArabic ? 'إجمالي صفحات المستند' : 'Total document pages'}: $_totalPages'
+                      : (isArabic
+                            ? 'تعذر تحديد عدد الصفحات'
+                            : 'Page count unavailable'),
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                    color: _totalPages > 0
+                        ? const Color(0xFF6366F1)
+                        : Colors.orange,
+                  ),
                 ),
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 24),
 
-              // ── من الصفحة ──
+              // ── سطر من الصفحة ──
               Text(
                 isArabic ? 'من الصفحة' : 'From Page',
-                style: const TextStyle(fontWeight: FontWeight.w600),
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 15,
+                ),
               ),
               const SizedBox(height: 8),
               _buildPageCounter(
                 value: fromPage,
                 min: 1,
-                max: toPage,
+                max: toPage, // حماية السهم العلوي
+                controller: _fromController,
+                onChanged: (val) => fromPage = val,
                 onDecrement: () => setStateDialog(() {
-                  if (fromPage > 1) fromPage--;
+                  if (fromPage > 1) {
+                    fromPage--;
+                    _fromController.text = '$fromPage';
+                  }
                 }),
                 onIncrement: () => setStateDialog(() {
-                  if (fromPage < toPage) fromPage++;
+                  if (fromPage < toPage) {
+                    fromPage++;
+                    _fromController.text = '$fromPage';
+                  }
                 }),
               ),
 
-              const SizedBox(height: 16),
+              const SizedBox(height: 20),
 
-              // ── إلى الصفحة ──
+              // ── سطر إلى الصفحة ──
               Text(
                 isArabic ? 'إلى الصفحة' : 'To Page',
-                style: const TextStyle(fontWeight: FontWeight.w600),
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 15,
+                ),
               ),
               const SizedBox(height: 8),
               _buildPageCounter(
                 value: toPage,
-                min: fromPage,
+                min: fromPage, // حماية السهم السفلي
                 max: _totalPages > 0 ? _totalPages : 9999,
+                controller: _toController,
+                onChanged: (val) => toPage = val,
                 onDecrement: () => setStateDialog(() {
-                  if (toPage > fromPage) toPage--;
+                  if (toPage > fromPage) {
+                    toPage--;
+                    _toController.text = '$toPage';
+                  }
                 }),
                 onIncrement: () => setStateDialog(() {
-                  if (_totalPages == 0 || toPage < _totalPages) toPage++;
+                  if (_totalPages == 0 || toPage < _totalPages) {
+                    toPage++;
+                    _toController.text = '$toPage';
+                  }
                 }),
               ),
             ],
@@ -505,8 +557,44 @@ class _QuestionsPageState extends State<QuestionsPage>
               child: Text(isArabic ? 'إلغاء' : 'Cancel'),
             ),
             ElevatedButton(
-              onPressed: () =>
-                  Navigator.pop(context, {'from': fromPage, 'to': toPage}),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF6366F1),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 12,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+              onPressed: () {
+                // الفحص الذكي النهائي للمدخلات المكتوبة يدوياً عبر الكيبورد
+                int finalFrom = int.tryParse(_fromController.text) ?? fromPage;
+                int finalTo = int.tryParse(_toController.text) ?? toPage;
+
+                if (finalFrom < 1 ||
+                    (_totalPages > 0 && finalFrom > _totalPages)) {
+                  _showErrorSnackBar(
+                    isArabic
+                        ? 'رقم بداية الصفحة غير صحيح! يجب أن يكون بين 1 و $_totalPages'
+                        : 'Invalid start page! Must be between 1 and $_totalPages',
+                  );
+                  return;
+                }
+
+                if (finalTo < finalFrom ||
+                    (_totalPages > 0 && finalTo > _totalPages)) {
+                  _showErrorSnackBar(
+                    isArabic
+                        ? 'رقم نهاية الصفحة غير صحيح أو أقل من صفحة البداية!'
+                        : 'Invalid end page or less than start page!',
+                  );
+                  return;
+                }
+
+                Navigator.pop(context, {'from': finalFrom, 'to': finalTo});
+              },
               child: Text(isArabic ? 'توليد' : 'Generate'),
             ),
           ],
@@ -528,37 +616,66 @@ class _QuestionsPageState extends State<QuestionsPage>
     required int value,
     required int min,
     required int max,
+    required TextEditingController controller,
+    required ValueChanged<int> onChanged,
     required VoidCallback onDecrement,
     required VoidCallback onIncrement,
   }) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
+        // زر الناقص (-) الجانبي باللون الأزرق المعتاد
         IconButton(
           onPressed: value > min ? onDecrement : null,
           icon: const Icon(Icons.remove_circle_outline_rounded),
           color: const Color(0xFF6366F1),
           iconSize: 28,
         ),
+
+        // الحاوية المتدرجة الأنيقة التي بداخلها الحقل الشفاف للكتابة
         Container(
-          width: 70,
-          padding: const EdgeInsets.symmetric(vertical: 8),
+          width: 80,
+          padding: const EdgeInsets.symmetric(vertical: 4),
           decoration: BoxDecoration(
             gradient: const LinearGradient(
               colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
             ),
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF6366F1).withOpacity(0.25),
+                blurRadius: 8,
+                offset: const Offset(0, 4),
+              ),
+            ],
           ),
-          child: Text(
-            '$value',
+          child: TextField(
+            controller: controller,
+            keyboardType: TextInputType.number,
             textAlign: TextAlign.center,
+            cursorColor: Colors.white,
+            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
             style: const TextStyle(
               color: Colors.white,
               fontWeight: FontWeight.bold,
               fontSize: 20,
             ),
+            decoration: const InputDecoration(
+              border: InputBorder.none,
+              isDense: true,
+              contentPadding: EdgeInsets.symmetric(vertical: 8),
+            ),
+            onChanged: (text) {
+              if (text.isEmpty) return;
+              int? parsed = int.tryParse(text);
+              if (parsed != null) {
+                onChanged(parsed); // تحديث القيمة منطقياً في الخلفية فوراً
+              }
+            },
           ),
         ),
+
+        // زر الزائد (+) الجانبي
         IconButton(
           onPressed: (_totalPages == 0 || value < max) ? onIncrement : null,
           icon: const Icon(Icons.add_circle_outline_rounded),
@@ -572,6 +689,8 @@ class _QuestionsPageState extends State<QuestionsPage>
   @override
   void dispose() {
     _animationController.dispose();
+    _fromController.dispose();
+    _toController.dispose();
     super.dispose();
   }
 

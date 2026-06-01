@@ -5,7 +5,7 @@ use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\FilesController;
 use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\OtpController;
-
+use App\Http\Controllers\ConversationController;
 /*
 |--------------------------------------------------------------------------
 | Public Auth Routes
@@ -76,4 +76,11 @@ Route::middleware('auth:api')->group(function () {
     Route::post('/files/{id}/chat',    [FilesController::class, 'chat']);
     Route::post('/chat', [FilesController::class, 'generalChat']);
     Route::post('/files/{id}/mindmap', [FilesController::class, 'mindmap']);
+
+    // Conversations
+    Route::get('/conversations', [ConversationController::class, 'index']);
+    Route::post('/conversations', [ConversationController::class, 'store']);
+    Route::get('/conversations/{id}', [ConversationController::class, 'show']);
+    Route::delete('/conversations/{id}', [ConversationController::class, 'destroy']);
+    Route::post('/conversations/{id}/chat', [ConversationController::class, 'chat']);
 });

@@ -23,8 +23,6 @@ import 'sign_in_page.dart';
 import 'history_page.dart';
 import 'widgets/particles_painter.dart';
 import 'chat_page.dart';
-import 'chat_page.dart';
-import 'chat_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({Key? key}) : super(key: key);
@@ -42,11 +40,10 @@ class _HomePageState extends State<HomePage>
   bool _isLoading = true;
   String? _selectedFileName;
   String? _selectedFileId;
-  int     _selectedPageCount = 0;
+  int _selectedPageCount = 0;
   bool _isFileProcessing = false;
   bool _isDragging = false;
-  bool _isUploading = false; // ← NEW: tracks upload-in-progress
-
+  bool _isUploading = false; // ← يتابع حالة الرفع الآن بشكل صحيح
 
   late String _selectedLanguage;
 
@@ -72,7 +69,9 @@ class _HomePageState extends State<HomePage>
     _slideAnimation =
         Tween<Offset>(begin: const Offset(0, 0.2), end: Offset.zero).animate(
           CurvedAnimation(
-              parent: _animationController, curve: Curves.easeOutCubic),
+            parent: _animationController,
+            curve: Curves.easeOutCubic,
+          ),
         );
 
     _animationController.forward();
@@ -108,7 +107,6 @@ class _HomePageState extends State<HomePage>
           colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
         ),
       ),
-
       Feature(
         title: isArabic ? 'شرح ذكي' : 'Smart Explanation',
         description: isArabic
@@ -119,30 +117,6 @@ class _HomePageState extends State<HomePage>
         route: '/explanation',
         gradient: const LinearGradient(
           colors: [Color(0xFF10B981), Color(0xFF34D399)],
-        ),
-      ),
-      Feature(
-        title: isArabic ? 'شات ذكي' : 'Smart Chat',
-        description: isArabic
-            ? 'اسأل أي سؤال عن المستند'
-            : 'Ask anything about the document',
-        icon: Icons.chat_rounded,
-        color: const Color(0xFF3B82F6),
-        route: '/chat',
-        gradient: const LinearGradient(
-          colors: [Color(0xFF3B82F6), Color(0xFF60A5FA)],
-        ),
-      ),
-      Feature(
-        title: isArabic ? 'شات ذكي' : 'Smart Chat',
-        description: isArabic
-            ? 'اسأل أي سؤال عن أي حاجة'
-            : 'Ask anything, anytime',
-        icon: Icons.chat_rounded,
-        color: const Color(0xFF3B82F6),
-        route: '/chat',
-        gradient: const LinearGradient(
-          colors: [Color(0xFF3B82F6), Color(0xFF60A5FA)],
         ),
       ),
       Feature(
@@ -160,7 +134,6 @@ class _HomePageState extends State<HomePage>
     ];
   }
 
-  // دالة للحصول على صورة المستخدم
   ImageProvider? _getUserAvatar() {
     if (_user == null) return null;
 
@@ -180,8 +153,6 @@ class _HomePageState extends State<HomePage>
     return null;
   }
 
-
-
   Future<void> _refreshUserData() async {
     try {
       final response = await _authService.getCurrentUser();
@@ -191,16 +162,12 @@ class _HomePageState extends State<HomePage>
           setState(() {
             _user = freshUser;
           });
-          debugPrint('HomePage - User data refreshed:');
-          debugPrint("  - Name: ${_user?['name']}");
-          debugPrint("  - Has avatar: ${_user?['avatarBytes'] != null}");
         }
       }
     } catch (e) {
-      debugPrint('Error refreshing user: \$e');
+      debugPrint('Error refreshing user: $e');
     }
   }
-
 
   Future<void> _loadUserData() async {
     setState(() => _isLoading = true);
@@ -218,7 +185,9 @@ class _HomePageState extends State<HomePage>
         Navigator.pushReplacement(
           context,
           PageTransition(
-              child: const SignInPage(), type: PageTransitionType.fade),
+            child: const SignInPage(),
+            type: PageTransitionType.fade,
+          ),
         );
       }
     }
@@ -240,7 +209,6 @@ class _HomePageState extends State<HomePage>
           _user = updatedUserData;
         });
 
-        // ✅ تحديث الصورة محلياً لو اتغيرت
         if (_user!['avatarBytes'] != null) {
           try {
             final bytes = base64Decode(_user!['avatarBytes']);
@@ -250,7 +218,6 @@ class _HomePageState extends State<HomePage>
           }
         }
       } else {
-        // ✅ اقرأ من التخزين المحلي مش من السيرفر مباشرة
         final freshUser = await _authService.getCurrentUserFromStorage();
         if (freshUser != null && mounted) {
           setState(() {
@@ -259,7 +226,6 @@ class _HomePageState extends State<HomePage>
         }
       }
     } else {
-      // ✅ حتى لو ما فيش result، حدّث من التخزين المحلي
       final freshUser = await _authService.getCurrentUserFromStorage();
       if (freshUser != null && mounted) {
         setState(() {
@@ -305,13 +271,17 @@ class _HomePageState extends State<HomePage>
         Navigator.pushReplacement(
           context,
           PageTransition(
-              child: const SplashScreen(), type: PageTransitionType.fade),
+            child: const SplashScreen(),
+            type: PageTransitionType.fade,
+          ),
         );
       }
     }
   }
 
   Future<void> _pickPDF() async {
+    if (_isUploading) return; // منع الضغط المتكرر أثناء الرفع
+
     try {
       FilePickerResult? result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
@@ -328,6 +298,8 @@ class _HomePageState extends State<HomePage>
 
       if (bytes == null) return;
 
+      setState(() => _isUploading = true); // تفعيل واجهة التحميل
+
       final uploadedFile = await _filesService.uploadFileBytes(
         bytes,
         fileName: fileName,
@@ -340,6 +312,7 @@ class _HomePageState extends State<HomePage>
           _selectedFileId = uploadedFile['id']?.toString();
           _selectedPageCount = (uploadedFile['page_count'] ?? 0) as int;
           _isFileProcessing = uploadedFile['has_text'] == false;
+          _isUploading = false; // إلغاء التحميل بعد النجاح
         });
 
         if (mounted) {
@@ -348,14 +321,17 @@ class _HomePageState extends State<HomePage>
           );
         }
       } else {
+        setState(() => _isUploading = false);
         if (mounted) {
           _showErrorSnackBar(
-              isArabic ? 'فشل رفع الملف' : 'Failed to upload file');
+            isArabic ? 'فشل رفع الملف' : 'Failed to upload file',
+          );
         }
       }
     } catch (e) {
       debugPrint('Error picking file: $e');
       if (mounted) {
+        setState(() => _isUploading = false);
         _showErrorSnackBar('Error: $e');
       }
     }
@@ -365,6 +341,7 @@ class _HomePageState extends State<HomePage>
     setState(() {
       _selectedFileName = null;
       _selectedFileId = null;
+      _selectedPageCount = 0;
       _isFileProcessing = false;
     });
   }
@@ -381,8 +358,7 @@ class _HomePageState extends State<HomePage>
         ),
         backgroundColor: Colors.green,
         behavior: SnackBarBehavior.floating,
-        shape:
-        RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         duration: const Duration(seconds: 2),
       ),
     );
@@ -393,16 +369,18 @@ class _HomePageState extends State<HomePage>
       SnackBar(
         content: Row(
           children: [
-            const Icon(Icons.warning_amber_rounded,
-                color: Colors.white, size: 20),
+            const Icon(
+              Icons.warning_amber_rounded,
+              color: Colors.white,
+              size: 20,
+            ),
             const SizedBox(width: 12),
             Expanded(child: Text(message)),
           ],
         ),
         backgroundColor: Colors.orange,
         behavior: SnackBarBehavior.floating,
-        shape:
-        RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         duration: const Duration(seconds: 4),
       ),
     );
@@ -420,100 +398,101 @@ class _HomePageState extends State<HomePage>
         ),
         backgroundColor: Colors.red,
         behavior: SnackBarBehavior.floating,
-        shape:
-        RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
     );
   }
 
   Widget _buildAnimatedDialog(
-      BuildContext context, {
-        required String title,
-        required String content,
-        required String confirmText,
-        bool isDestructive = false,
-      }) {
+    BuildContext context, {
+    required String title,
+    required String content,
+    required String confirmText,
+    bool isDestructive = false,
+  }) {
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
       insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 480),
         child: ScaleTransition(
-        scale: CurvedAnimation(
-            parent: _animationController, curve: Curves.easeOutBack),
-        child: Container(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: (isDestructive ? Colors.red : Colors.green)
-                      .withOpacity(0.1),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  isDestructive
-                      ? Icons.warning_rounded
-                      : Icons.check_circle_rounded,
-                  color: isDestructive ? Colors.red : Colors.green,
-                  size: 48,
-                ),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                title,
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                content,
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Colors.grey[600],
-                ),
-              ),
-              const SizedBox(height: 24),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () => Navigator.pop(context, false),
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                      ),
-                      child: Text(isArabic ? 'إلغاء' : 'Cancel'),
-                    ),
+          scale: CurvedAnimation(
+            parent: _animationController,
+            curve: Curves.easeOutBack,
+          ),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: (isDestructive ? Colors.red : Colors.green)
+                        .withOpacity(0.1),
+                    shape: BoxShape.circle,
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: () => Navigator.pop(context, true),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: isDestructive
-                            ? Colors.red
-                            : Theme.of(context).primaryColor,
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                      ),
-                      child: Text(confirmText),
-                    ),
+                  child: Icon(
+                    isDestructive
+                        ? Icons.warning_rounded
+                        : Icons.check_circle_rounded,
+                    color: isDestructive ? Colors.red : Colors.green,
+                    size: 48,
                   ),
-                ],
-              ),
-            ],
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  title,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  content,
+                  textAlign: TextAlign.center,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(color: Colors.grey[600]),
+                ),
+                const SizedBox(height: 24),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.pop(context, false),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                        ),
+                        child: Text(isArabic ? 'إلغاء' : 'Cancel'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () => Navigator.pop(context, true),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: isDestructive
+                              ? Colors.red
+                              : Theme.of(context).primaryColor,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                        ),
+                        child: Text(confirmText),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ),
-    ),
     );
   }
 
@@ -559,31 +538,91 @@ class _HomePageState extends State<HomePage>
       bindings: {
         const SingleActivator(LogicalKeyboardKey.keyO, control: true): _pickPDF,
         const SingleActivator(LogicalKeyboardKey.keyH, control: true): () {
-          Navigator.push(context, MaterialPageRoute(builder: (_) => HistoryPage()));
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => HistoryPage()),
+          );
         },
         const SingleActivator(LogicalKeyboardKey.comma, control: true): () {
-          Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsPage()));
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const SettingsPage()),
+          );
         },
         const SingleActivator(LogicalKeyboardKey.escape): () {
           if (Navigator.canPop(context)) Navigator.pop(context);
         },
         const SingleActivator(LogicalKeyboardKey.keyS, control: true): () {
-          if (_selectedFileName == null) { _showErrorSnackBar(isArabic ? 'الرجاء رفع ملف PDF أولاً' : 'Please upload a PDF first'); return; }
-          Navigator.push(context, PageTransition(child: SummaryPage(fileName: _selectedFileName, fileId: _selectedFileId), type: PageTransitionType.slideFromRight));
+          if (_selectedFileName == null) {
+            _showErrorSnackBar(
+              isArabic
+                  ? 'الرجاء رفع ملف PDF أولاً'
+                  : 'Please upload a PDF first',
+            );
+            return;
+          }
+          Navigator.push(
+            context,
+            PageTransition(
+              child: SummaryPage(
+                fileName: _selectedFileName,
+                fileId: _selectedFileId,
+                pageCount: _selectedPageCount,
+              ),
+              type: PageTransitionType.slideFromRight,
+            ),
+          );
         },
         const SingleActivator(LogicalKeyboardKey.keyQ, control: true): () {
-          if (_selectedFileName == null) { _showErrorSnackBar(isArabic ? 'الرجاء رفع ملف PDF أولاً' : 'Please upload a PDF first'); return; }
-          Navigator.push(context, PageTransition(child: QuestionsPage(fileName: _selectedFileName, fileId: _selectedFileId), type: PageTransitionType.slideFromRight));
+          if (_selectedFileName == null) {
+            _showErrorSnackBar(
+              isArabic
+                  ? 'الرجاء رفع ملف PDF أولاً'
+                  : 'Please upload a PDF first',
+            );
+            return;
+          }
+          Navigator.push(
+            context,
+            PageTransition(
+              child: QuestionsPage(
+                fileName: _selectedFileName,
+                fileId: _selectedFileId,
+                pageCount: _selectedPageCount,
+              ),
+              type: PageTransitionType.slideFromRight,
+            ),
+          );
         },
         const SingleActivator(LogicalKeyboardKey.keyE, control: true): () {
-          if (_selectedFileName == null) { _showErrorSnackBar(isArabic ? 'الرجاء رفع ملف PDF أولاً' : 'Please upload a PDF first'); return; }
-          Navigator.push(context, PageTransition(child: ExplanationPage(fileName: _selectedFileName, fileId: _selectedFileId), type: PageTransitionType.slideFromRight));
-        },
-        const SingleActivator(LogicalKeyboardKey.keyC, control: true): () {
-          if (_selectedFileId == null) { _showErrorSnackBar(isArabic ? 'الرجاء رفع ملف PDF أولاً' : 'Please upload a PDF first'); return; }
+          if (_selectedFileName == null) {
+            _showErrorSnackBar(
+              isArabic
+                  ? 'الرجاء رفع ملف PDF أولاً'
+                  : 'Please upload a PDF first',
+            );
+            return;
+          }
+          Navigator.push(
+            context,
+            PageTransition(
+              child: ExplanationPage(
+                fileName: _selectedFileName,
+                fileId: _selectedFileId,
+                pageCount: _selectedPageCount,
+              ),
+              type: PageTransitionType.slideFromRight,
+            ),
+          );
         },
         const SingleActivator(LogicalKeyboardKey.keyP, control: true): () {
-          Navigator.push(context, PageTransition(child: const PersonalPage(), type: PageTransitionType.slideFromRight));
+          Navigator.push(
+            context,
+            PageTransition(
+              child: const PersonalPage(),
+              type: PageTransitionType.slideFromRight,
+            ),
+          );
         },
       },
       child: Focus(
@@ -593,43 +632,47 @@ class _HomePageState extends State<HomePage>
           backgroundColor: theme.scaffoldBackgroundColor,
           appBar: _buildAppBar(theme, avatarImage),
           drawer: AppDrawer(
-        user: _user,
-        onLogout: _logout,
-        selectedFileId: _selectedFileId,    // ✅
-        selectedFileName: _selectedFileName,
-        selectedLanguage: _selectedLanguage,
-      ),
-      body: Center(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(maxWidth: Responsive.maxWidth(context)),
-          child: SingleChildScrollView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            FadeTransition(
-              opacity: _fadeAnimation,
-              child: _buildHeaderSection(theme),
+            user: _user,
+            onLogout: _logout,
+            selectedFileId: _selectedFileId,
+            selectedFileName: _selectedFileName,
+            selectedLanguage: _selectedLanguage,
+          ),
+          body: Center(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: Responsive.maxWidth(context),
+              ),
+              child: SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    FadeTransition(
+                      opacity: _fadeAnimation,
+                      child: _buildHeaderSection(theme),
+                    ),
+                    SlideTransition(
+                      position: _slideAnimation,
+                      child: _buildUploadSection(theme),
+                    ),
+                    const SizedBox(height: 8),
+                    _buildFeaturesSection(theme),
+                    const SizedBox(height: 32),
+                  ],
+                ),
+              ),
             ),
-            SlideTransition(
-              position: _slideAnimation,
-              child: _buildUploadSection(theme),
-            ),
-            const SizedBox(height: 8),
-            _buildFeaturesSection(theme),
-            const SizedBox(height: 32),
-          ],
+          ),
         ),
-      ),
-        ),
-      ),
-    ),
       ),
     );
   }
 
   PreferredSizeWidget _buildAppBar(
-      ThemeData theme, ImageProvider? avatarImage) {
+    ThemeData theme,
+    ImageProvider? avatarImage,
+  ) {
     return AppBar(
       title: Row(
         children: [
@@ -673,16 +716,17 @@ class _HomePageState extends State<HomePage>
                 child: CircleAvatar(
                   radius: 20,
                   backgroundImage: avatarImage,
-                  backgroundColor:
-                  _getColorFromName(_user?['name']).withOpacity(0.2),
+                  backgroundColor: _getColorFromName(
+                    _user?['name'],
+                  ).withOpacity(0.2),
                   child: avatarImage == null
                       ? Text(
-                    _getInitials(_user?['name']),
-                    style: TextStyle(
-                      color: _getColorFromName(_user?['name']),
-                      fontWeight: FontWeight.bold,
-                    ),
-                  )
+                          _getInitials(_user?['name']),
+                          style: TextStyle(
+                            color: _getColorFromName(_user?['name']),
+                            fontWeight: FontWeight.bold,
+                          ),
+                        )
                       : null,
                 ),
               ),
@@ -718,8 +762,7 @@ class _HomePageState extends State<HomePage>
           ),
           const SizedBox(height: 8),
           Container(
-            padding:
-            const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(
               color: Theme.of(context).primaryColor.withOpacity(0.1),
               borderRadius: BorderRadius.circular(20),
@@ -775,142 +818,225 @@ class _HomePageState extends State<HomePage>
       onDragEntered: (_) => setState(() => _isDragging = true),
       onDragExited: (_) => setState(() => _isDragging = false),
       onDragDone: (details) async {
+        if (_isUploading) return; // منع الإسقاط المتكرر أثناء الرفع الحالي
+
         setState(() => _isDragging = false);
-        final files = details.files.where((f) => f.path.toLowerCase().endsWith('.pdf')).toList();
+        final files = details.files
+            .where((f) => f.path.toLowerCase().endsWith('.pdf'))
+            .toList();
         if (files.isEmpty) {
-          _showErrorSnackBar(isArabic ? 'يرجى إسقاط ملف PDF فقط' : 'Please drop a PDF file only');
+          _showErrorSnackBar(
+            isArabic ? 'يرجى إسقاط ملف PDF فقط' : 'Please drop a PDF file only',
+          );
           return;
         }
+
         final file = files.first;
         final bytes = await file.readAsBytes();
         final fileName = file.name;
-        final uploadedFile = await _filesService.uploadFileBytes(bytes, fileName: fileName, type: 'PDF');
+
+        setState(
+          () => _isUploading = true,
+        ); // تفعيل واجهة التحميل أثناء السحب والإفلات
+
+        final uploadedFile = await _filesService.uploadFileBytes(
+          bytes,
+          fileName: fileName,
+          type: 'PDF',
+        );
         if (uploadedFile != null) {
           setState(() {
             _selectedFileName = fileName;
             _selectedFileId = uploadedFile['id']?.toString();
+            _selectedPageCount = (uploadedFile['page_count'] ?? 0) as int;
             _isFileProcessing = uploadedFile['has_text'] == false;
+            _isUploading = false;
           });
-          if (mounted) _showSuccessSnackBar('$fileName ${isArabic ? 'تم رفعه بنجاح' : 'uploaded successfully'}');
+          if (mounted)
+            _showSuccessSnackBar(
+              '$fileName ${isArabic ? 'تم رفعه بنجاح' : 'uploaded successfully'}',
+            );
         } else {
-          if (mounted) _showErrorSnackBar(isArabic ? 'فشل رفع الملف' : 'Failed to upload file');
+          setState(() => _isUploading = false);
+          if (mounted)
+            _showErrorSnackBar(
+              isArabic ? 'فشل رفع الملف' : 'Failed to upload file',
+            );
         }
       },
       child: MouseRegion(
-        cursor: SystemMouseCursors.click,
+        cursor: _isUploading
+            ? SystemMouseCursors.basic
+            : SystemMouseCursors.click,
         child: InteractiveScale(
-          onTap: _pickPDF,
+          onTap: _isUploading ? null : _pickPDF,
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 200),
             width: double.infinity,
             height: 220,
             decoration: BoxDecoration(
-              gradient: _isDragging
+              gradient: _isUploading
+                  ? const LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        Color(0xFF8B8FD4),
+                        const Color(0xFFA78BCA),
+                      ], // بهتان الألوان أثناء الرفع
+                    )
+                  : _isDragging
                   ? const LinearGradient(
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
                       colors: [Color(0xFF4F46E5), Color(0xFF7C3AED)],
                     )
                   : const LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
+                    ),
+              borderRadius: BorderRadius.circular(32),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(
+                    0xFF6366F1,
+                  ).withOpacity(_isUploading ? 0.15 : 0.3),
+                  blurRadius: 20,
+                  offset: const Offset(0, 10),
+                ),
+              ],
             ),
-            borderRadius: BorderRadius.circular(32),
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFF6366F1).withOpacity(0.3),
-                blurRadius: 20,
-                offset: const Offset(0, 10),
-              ),
-            ],
-          ),
-          child: Stack(
-            children: [
-              Positioned(
-                right: -20,
-                top: -20,
-                child: Container(
-                  width: 100,
-                  height: 100,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.1),
-                    shape: BoxShape.circle,
+            child: Stack(
+              children: [
+                Positioned(
+                  right: -20,
+                  top: -20,
+                  child: Container(
+                    width: 100,
+                    height: 100,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.1),
+                      shape: BoxShape.circle,
+                    ),
                   ),
                 ),
-              ),
-              Positioned(
-                left: -30,
-                bottom: -30,
-                child: Container(
-                  width: 150,
-                  height: 150,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.05),
-                    shape: BoxShape.circle,
+                Positioned(
+                  left: -30,
+                  bottom: -30,
+                  child: Container(
+                    width: 150,
+                    height: 150,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.05),
+                      shape: BoxShape.circle,
+                    ),
                   ),
                 ),
-              ),
-              Positioned.fill(
-                child: IgnorePointer(
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(32),
-                    child: const ParticlesLayer(count: 18),
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(32),
+                      child: const ParticlesLayer(count: 18),
+                    ),
                   ),
                 ),
-              ),
-              Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    TweenAnimationBuilder(
-                      tween: Tween<double>(begin: 0, end: 1),
-                      duration: const Duration(milliseconds: 600),
-                      builder: (context, double value, child) {
-                        return Transform.scale(
-                          scale: value,
-                          child: Container(
-                            padding: const EdgeInsets.all(20),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.2),
-                              shape: BoxShape.circle,
-                            ),
-                            child: const Icon(
-                              Icons.cloud_upload_rounded,
-                              size: 48,
-                              color: Colors.white,
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      isArabic ? 'رفع ملف PDF' : 'Upload PDF',
-                      style: const TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.white,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      isArabic
-                          ? 'اسحب الملف أو انقر للاختيار'
-                          : 'Drag or click to select',
-                      style: TextStyle(
-                        color: Colors.white.withOpacity(0.9),
-                        fontSize: 14,
-                      ),
-                    ),
-                  ],
+                Center(
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 300),
+                    child: _isUploading
+                        ? _buildUploadingState() // عرض أنيميشن التحميل الحالي
+                        : _buildIdleUploadState(), // عرض واجهة الرفع العادية
+                  ),
                 ),
-              ),
-            ],
-          ),
+              ],
+            ),
           ),
         ),
       ),
+    );
+  }
+
+  // واجهة الرفع العادية الثابتة
+  Widget _buildIdleUploadState() {
+    return Column(
+      key: const ValueKey('idle'),
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        TweenAnimationBuilder(
+          tween: Tween<double>(begin: 0, end: 1),
+          duration: const Duration(milliseconds: 600),
+          builder: (context, double value, child) {
+            return Transform.scale(
+              scale: value,
+              child: Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.2),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.cloud_upload_rounded,
+                  size: 48,
+                  color: Colors.white,
+                ),
+              ),
+            );
+          },
+        ),
+        const SizedBox(height: 16),
+        Text(
+          isArabic ? 'رفع ملف PDF' : 'Upload PDF',
+          style: const TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.w600,
+            color: Colors.white,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          isArabic ? 'اسحب الملف أو انقر للاختيار' : 'Drag or click to select',
+          style: TextStyle(color: Colors.white.withOpacity(0.9), fontSize: 14),
+        ),
+      ],
+    );
+  }
+
+  // واجهة المؤشر الدائري أثناء عملية الرفع
+  Widget _buildUploadingState() {
+    return Column(
+      key: const ValueKey('uploading'),
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.2),
+            shape: BoxShape.circle,
+          ),
+          child: const SizedBox(
+            width: 48,
+            height: 48,
+            child: CircularProgressIndicator(
+              strokeWidth: 3,
+              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        Text(
+          isArabic ? 'جاري رفع الملف...' : 'Uploading...',
+          style: const TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.w600,
+            color: Colors.white,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          isArabic ? 'برجاء الانتظار' : 'Please wait',
+          style: TextStyle(color: Colors.white.withOpacity(0.9), fontSize: 14),
+        ),
+      ],
     );
   }
 
@@ -922,7 +1048,7 @@ class _HomePageState extends State<HomePage>
         gradient: LinearGradient(
           colors: [
             const Color(0xFF10B981).withOpacity(0.1),
-            const Color(0xFF10B981).withOpacity(0.05)
+            const Color(0xFF10B981).withOpacity(0.05),
           ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
@@ -944,8 +1070,11 @@ class _HomePageState extends State<HomePage>
                 ),
               ],
             ),
-            child: const Icon(Icons.picture_as_pdf_rounded,
-                color: Colors.white, size: 24),
+            child: const Icon(
+              Icons.picture_as_pdf_rounded,
+              color: Colors.white,
+              size: 24,
+            ),
           ),
           const SizedBox(width: 16),
           Expanded(
@@ -964,12 +1093,15 @@ class _HomePageState extends State<HomePage>
                 const SizedBox(height: 4),
                 Container(
                   padding: const EdgeInsets.symmetric(
-                      horizontal: 8, vertical: 4),
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
-                    color: (_isFileProcessing
-                        ? Colors.orange
-                        : const Color(0xFF10B981))
-                        .withOpacity(0.2),
+                    color:
+                        (_isFileProcessing
+                                ? Colors.orange
+                                : const Color(0xFF10B981))
+                            .withOpacity(0.2),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Row(
@@ -981,22 +1113,22 @@ class _HomePageState extends State<HomePage>
                           height: 10,
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
-                            valueColor:
-                            AlwaysStoppedAnimation(Colors.orange),
+                            valueColor: AlwaysStoppedAnimation(Colors.orange),
                           ),
                         )
                       else
-                        const Icon(Icons.check_circle,
-                            size: 12, color: Color(0xFF10B981)),
+                        const Icon(
+                          Icons.check_circle,
+                          size: 12,
+                          color: Color(0xFF10B981),
+                        ),
                       const SizedBox(width: 4),
                       Text(
                         _isFileProcessing
                             ? (isArabic
-                            ? 'جاري معالجة الملف...'
-                            : 'Processing...')
-                            : (isArabic
-                            ? 'جاهز للمعالجة'
-                            : 'Ready to process'),
+                                  ? 'جاري معالجة الملف...'
+                                  : 'Processing...')
+                            : (isArabic ? 'جاهز للمعالجة' : 'Ready to process'),
                         style: TextStyle(
                           color: _isFileProcessing
                               ? Colors.orange
@@ -1013,8 +1145,10 @@ class _HomePageState extends State<HomePage>
           ),
           IconButton(
             onPressed: _changePDF,
-            icon: Icon(Icons.close_rounded,
-                color: theme.iconTheme.color?.withOpacity(0.6)),
+            icon: Icon(
+              Icons.close_rounded,
+              color: theme.iconTheme.color?.withOpacity(0.6),
+            ),
             style: IconButton.styleFrom(
               backgroundColor: Colors.grey.withOpacity(0.1),
               shape: const CircleBorder(),
@@ -1048,7 +1182,9 @@ class _HomePageState extends State<HomePage>
               ),
               Container(
                 padding: const EdgeInsets.symmetric(
-                    horizontal: 12, vertical: 6),
+                  horizontal: 12,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   gradient: const LinearGradient(
                     colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
@@ -1073,8 +1209,12 @@ class _HomePageState extends State<HomePage>
     );
   }
 
-  Widget _buildFeatureItem(BuildContext context, ThemeData theme,
-      Feature feature, int index) {
+  Widget _buildFeatureItem(
+    BuildContext context,
+    ThemeData theme,
+    Feature feature,
+    int index,
+  ) {
     return AnimatedContainer(
       duration: const Duration(milliseconds: 400),
       curve: Curves.easeOutCubic,
@@ -1082,12 +1222,13 @@ class _HomePageState extends State<HomePage>
       child: GestureDetector(
         onTap: () {
           if (feature.route == '/chat') {
-            // ✅ الـ Chat الأول بتاع الملف - تفحص لو في ملف
-            if (index == 2) {  // الـ Chat الأول هو index 2
+            if (index == 2) {
               if (_selectedFileId == null) {
-                _showErrorSnackBar(isArabic
-                    ? 'الرجاء رفع ملف PDF أولاً'
-                    : 'Please upload a PDF first');
+                _showErrorSnackBar(
+                  isArabic
+                      ? 'الرجاء رفع ملف PDF أولاً'
+                      : 'Please upload a PDF first',
+                );
                 return;
               }
               Navigator.push(
@@ -1102,11 +1243,10 @@ class _HomePageState extends State<HomePage>
                 ),
               );
             } else {
-              // ✅ الـ Chat الثاني - بدون ملف (عام)
               Navigator.push(
                 context,
                 PageTransition(
-                  child: const ChatPage(fileId: ''),  // ❌ مش محتاج ملف
+                  child: const ChatPage(fileId: ''),
                   type: PageTransitionType.slideFromRight,
                   duration: const Duration(milliseconds: 400),
                 ),
@@ -1116,28 +1256,43 @@ class _HomePageState extends State<HomePage>
           }
 
           if (_selectedFileName == null) {
-            _showErrorSnackBar(isArabic
-                ? 'الرجاء رفع ملف PDF أولاً'
-                : 'Please upload a PDF first');
+            _showErrorSnackBar(
+              isArabic
+                  ? 'الرجاء رفع ملف PDF أولاً'
+                  : 'Please upload a PDF first',
+            );
             return;
           }
 
           Widget page;
           if (feature.route == '/explanation') {
             page = ExplanationPage(
-                fileName: _selectedFileName, fileId: _selectedFileId, pageCount: _selectedPageCount);
+              fileName: _selectedFileName,
+              fileId: _selectedFileId,
+              pageCount: _selectedPageCount,
+            );
           } else if (feature.route == '/summary') {
             page = SummaryPage(
-                fileName: _selectedFileName, fileId: _selectedFileId, pageCount: _selectedPageCount);
+              fileName: _selectedFileName,
+              fileId: _selectedFileId,
+              pageCount: _selectedPageCount,
+            );
           } else if (feature.route == '/mindmap') {
             page = MindMapPage(
-                fileName: _selectedFileName, fileId: _selectedFileId);
+              fileName: _selectedFileName,
+              fileId: _selectedFileId,
+            );
           } else if (feature.route == '/chat') {
             page = ChatPage(
-                fileName: _selectedFileName!, fileId: _selectedFileId!);
+              fileName: _selectedFileName!,
+              fileId: _selectedFileId!,
+            );
           } else {
             page = QuestionsPage(
-                fileName: _selectedFileName, fileId: _selectedFileId, pageCount: _selectedPageCount);
+              fileName: _selectedFileName,
+              fileId: _selectedFileId,
+              pageCount: _selectedPageCount,
+            );
           }
 
           Navigator.push(
@@ -1154,16 +1309,13 @@ class _HomePageState extends State<HomePage>
             gradient: LinearGradient(
               colors: [
                 feature.color.withOpacity(0.1),
-                feature.color.withOpacity(0.05)
+                feature.color.withOpacity(0.05),
               ],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
             borderRadius: BorderRadius.circular(24),
-            border: Border.all(
-              color: feature.color.withOpacity(0.2),
-              width: 1,
-            ),
+            border: Border.all(color: feature.color.withOpacity(0.2), width: 1),
           ),
           child: Material(
             color: Colors.transparent,
@@ -1253,7 +1405,7 @@ class AppDrawer extends StatelessWidget {
   final Map<String, dynamic>? user;
   final VoidCallback onLogout;
   final String selectedLanguage;
-  final String? selectedFileId;    // ✅ أضف ده
+  final String? selectedFileId;
   final String? selectedFileName;
 
   const AppDrawer({
@@ -1261,7 +1413,7 @@ class AppDrawer extends StatelessWidget {
     required this.user,
     required this.onLogout,
     required this.selectedLanguage,
-    this.selectedFileId,    // ✅
+    this.selectedFileId,
     this.selectedFileName,
   }) : super(key: key);
 
@@ -1333,13 +1485,13 @@ class AppDrawer extends StatelessWidget {
                         backgroundColor: Colors.white,
                         child: avatarImage == null
                             ? Text(
-                          _getInitials(user?['name']),
-                          style: TextStyle(
-                            color: _getColorFromName(user?['name']),
-                            fontSize: Responsive.fontSize(context, 32),
-                            fontWeight: FontWeight.bold,
-                          ),
-                        )
+                                _getInitials(user?['name']),
+                                style: TextStyle(
+                                  color: _getColorFromName(user?['name']),
+                                  fontSize: Responsive.fontSize(context, 32),
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              )
                             : null,
                       ),
                     ),
@@ -1356,7 +1508,9 @@ class AppDrawer extends StatelessWidget {
                     Text(
                       user?['email'] ?? '',
                       style: const TextStyle(
-                          color: Colors.white70, fontSize: 14),
+                        color: Colors.white70,
+                        fontSize: 14,
+                      ),
                     ),
                   ],
                 ),
@@ -1371,13 +1525,13 @@ class AppDrawer extends StatelessWidget {
                   context,
                   Icons.home_rounded,
                   isArabic ? 'الرئيسية' : 'Home',
-                      () => Navigator.pop(context),
+                  () => Navigator.pop(context),
                 ),
                 _buildDrawerItem(
                   context,
                   Icons.folder_rounded,
                   isArabic ? 'مستنداتي' : 'My Documents',
-                      () {
+                  () {
                     Navigator.pop(context);
                     Navigator.push(
                       context,
@@ -1388,20 +1542,17 @@ class AppDrawer extends StatelessWidget {
                     );
                   },
                 ),
-
-
-
                 _buildDrawerItem(
                   context,
                   Icons.chat_rounded,
                   isArabic ? 'الشات الذكي' : 'Smart Chat',
-                      () {
+                  () {
                     Navigator.pop(context);
                     Navigator.push(
                       context,
                       PageTransition(
                         child: ChatPage(
-                          fileId: selectedFileId,      // ✅ لو في ملف → خاص، لو null → عام
+                          fileId: selectedFileId ?? '',
                           fileName: selectedFileName,
                         ),
                         type: PageTransitionType.slideFromRight,
@@ -1413,7 +1564,7 @@ class AppDrawer extends StatelessWidget {
                   context,
                   Icons.settings_rounded,
                   isArabic ? 'الإعدادات' : 'Settings',
-                      () {
+                  () {
                     Navigator.pop(context);
                     Navigator.push(
                       context,
@@ -1422,8 +1573,8 @@ class AppDrawer extends StatelessWidget {
                         type: PageTransitionType.slideFromRight,
                       ),
                     ).then((_) async {
-                        final authService = AuthService();
-                        await authService.getCurrentUser();
+                      final authService = AuthService();
+                      await authService.getCurrentUser();
                     });
                   },
                 ),
@@ -1432,7 +1583,7 @@ class AppDrawer extends StatelessWidget {
                   context,
                   Icons.logout_rounded,
                   isArabic ? 'تسجيل الخروج' : 'Logout',
-                      () {
+                  () {
                     Navigator.pop(context);
                     onLogout();
                   },
@@ -1447,22 +1598,24 @@ class AppDrawer extends StatelessWidget {
   }
 
   Widget _buildDrawerItem(
-      BuildContext context,
-      IconData icon,
-      String title,
-      VoidCallback onTap, {
-        Color? color,
-      }) {
+    BuildContext context,
+    IconData icon,
+    String title,
+    VoidCallback onTap, {
+    Color? color,
+  }) {
     return ListTile(
       leading: Container(
         padding: const EdgeInsets.all(8),
         decoration: BoxDecoration(
-          color:
-          (color ?? Theme.of(context).primaryColor).withOpacity(0.1),
+          color: (color ?? Theme.of(context).primaryColor).withOpacity(0.1),
           borderRadius: BorderRadius.circular(12),
         ),
-        child: Icon(icon,
-            color: color ?? Theme.of(context).primaryColor, size: 20),
+        child: Icon(
+          icon,
+          color: color ?? Theme.of(context).primaryColor,
+          size: 20,
+        ),
       ),
       title: Text(
         title,
@@ -1475,4 +1628,3 @@ class AppDrawer extends StatelessWidget {
     );
   }
 }
-

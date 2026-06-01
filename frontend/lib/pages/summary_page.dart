@@ -108,11 +108,13 @@ class _SummaryPageState extends State<SummaryPage>
   bool get isArabic => _selectedLanguage == 'arabic';
 
   // ── Page Range Dialog ───────────────────────────────────────────
+  // ── Page Range Dialog مصلح ومحمي بالكامل ───────────────────────────────────────────
+  // ── Page Range Dialog مصلح وموحد بالكامل لصفحة الملخص ─────────────────
   Future<void> _showPageRangeDialog() async {
     int fromPage = _selectedFromPage ?? 1;
     int toPage = _selectedToPage ?? (_totalPages > 0 ? _totalPages : 1);
 
-    // تهيئة النص داخل الـ Controllers قبل فتح الديالوج علطول
+    // تهيئة النص داخل الـ Controllers بالقيمة الحالية قبل فتح الديالوج مباشرة
     _fromController.text = '$fromPage';
     _toController.text = '$toPage';
 
@@ -122,47 +124,59 @@ class _SummaryPageState extends State<SummaryPage>
         builder: (context, setStateDialog) {
           return AlertDialog(
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20),
+              borderRadius: BorderRadius.circular(24),
             ),
             title: Text(
               isArabic
                   ? 'اختر نطاق الصفحات للملخص'
                   : 'Select Page Range for Summary',
+              textAlign: TextAlign.center,
               style: const TextStyle(fontWeight: FontWeight.bold),
             ),
             content: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  _totalPages > 0
-                      ? '${isArabic ? 'إجمالي الصفحات' : 'Total pages'}: $_totalPages'
-                      : (isArabic
-                            ? 'تعذر تحديد عدد الصفحات'
-                            : 'Page count unavailable'),
-                  style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    color: _totalPages > 0
-                        ? const Color(0xFF6366F1)
-                        : Colors.orange,
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF6366F1).withOpacity(0.06),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    _totalPages > 0
+                        ? '${isArabic ? 'إجمالي صفحات المستند' : 'Total document pages'}: $_totalPages'
+                        : (isArabic
+                              ? 'تعذر تحديد عدد الصفحات'
+                              : 'Page count unavailable'),
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                      color: _totalPages > 0
+                          ? const Color(0xFF6366F1)
+                          : Colors.orange,
+                    ),
                   ),
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 24),
 
                 // ── من الصفحة ──
                 Text(
                   isArabic ? 'من الصفحة' : 'From Page',
-                  style: const TextStyle(fontWeight: FontWeight.w600),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 15,
+                  ),
                 ),
                 const SizedBox(height: 8),
                 _buildPageCounter(
                   value: fromPage,
                   min: 1,
-                  max: _totalPages > 0
-                      ? _totalPages
-                      : 9999, // مفتوح للكتابة الحرة
+                  max: toPage, // حماية السهم العلوي
                   controller: _fromController,
-                  onChanged: (val) =>
-                      fromPage = val, // تحديث متغير الـ الـ Logic فقط
+                  onChanged: (val) => fromPage = val,
                   onDecrement: () => setStateDialog(() {
                     if (fromPage > 1) {
                       fromPage--;
@@ -170,34 +184,41 @@ class _SummaryPageState extends State<SummaryPage>
                     }
                   }),
                   onIncrement: () => setStateDialog(() {
-                    fromPage++;
-                    _fromController.text = '$fromPage';
+                    if (fromPage < toPage) {
+                      fromPage++;
+                      _fromController.text = '$fromPage';
+                    }
                   }),
                 ),
 
-                const SizedBox(height: 16),
+                const SizedBox(height: 20),
 
                 // ── إلى الصفحة ──
                 Text(
                   isArabic ? 'إلى الصفحة' : 'To Page',
-                  style: const TextStyle(fontWeight: FontWeight.w600),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 15,
+                  ),
                 ),
                 const SizedBox(height: 8),
                 _buildPageCounter(
                   value: toPage,
-                  min: 1,
+                  min: fromPage, // حماية السهم السفلي
                   max: _totalPages > 0 ? _totalPages : 9999,
                   controller: _toController,
                   onChanged: (val) => toPage = val,
                   onDecrement: () => setStateDialog(() {
-                    if (toPage > 1) {
+                    if (toPage > fromPage) {
                       toPage--;
                       _toController.text = '$toPage';
                     }
                   }),
                   onIncrement: () => setStateDialog(() {
-                    toPage++;
-                    _toController.text = '$toPage';
+                    if (_totalPages == 0 || toPage < _totalPages) {
+                      toPage++;
+                      _toController.text = '$toPage';
+                    }
                   }),
                 ),
               ],
@@ -211,12 +232,16 @@ class _SummaryPageState extends State<SummaryPage>
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF6366F1),
                   foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 12,
+                  ),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(14),
                   ),
                 ),
                 onPressed: () {
-                  // 🚨 فحص الـ Validation الذكي عند الضغط على زر التوليد النهائي
+                  // 🚨 الفحص النهائي الذكي للمدخلات اليدوية من الكيبورد
                   int finalFrom =
                       int.tryParse(_fromController.text) ?? fromPage;
                   int finalTo = int.tryParse(_toController.text) ?? toPage;
@@ -258,11 +283,11 @@ class _SummaryPageState extends State<SummaryPage>
         _selectedFromPage = result['from'];
         _selectedToPage = result['to'];
       });
-      await _generateSummary();
+      await _generateSummary(); // استدعاء دالة توليد الملخص الخاصة بهذه الصفحة
     }
   }
 
-  // ── Helper Widget لمعداد الصفحات كـ نص عادي ──────────────────────────────
+  // ── Helper Widget لمعداد الصفحات الجذاب (مطابق تماماً لشكل صفحة الأسئلة) ──────────────────────────────
   Widget _buildPageCounter({
     required int value,
     required int min,
@@ -272,63 +297,68 @@ class _SummaryPageState extends State<SummaryPage>
     required VoidCallback onDecrement,
     required VoidCallback onIncrement,
   }) {
-    final theme = Theme.of(context);
-
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
-      mainAxisSize: MainAxisSize.min,
       children: [
-        // زر الناقص (-) بحجم لطيف ومناسب للنص
+        // زر الناقص (-) بحجم كبير وأنيق
         IconButton(
           onPressed: value > min ? onDecrement : null,
           icon: const Icon(Icons.remove_circle_outline_rounded),
           color: const Color(0xFF6366F1),
-          iconSize: 22,
-          padding: EdgeInsets.zero,
-          constraints: const BoxConstraints(),
+          iconSize: 28, // نفس الحجم المتناسق في صفحة الأسئلة
         ),
         const SizedBox(width: 8),
 
-        // حقل الكتابة الذكي الشفاف (يبدو كنص عادي)
-        IntrinsicWidth(
+        // الحاوية المتدرجة (Gradient) وبداخلها حقل إدخال النص الشفاف
+        Container(
+          width: 70, // نفس العرض المحدد في صفحة الأسئلة
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
+            ),
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF6366F1).withOpacity(0.25),
+                blurRadius: 8,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
           child: TextField(
             controller: controller,
             keyboardType: TextInputType.number,
             textAlign: TextAlign.center,
-            cursorColor: const Color(0xFF6366F1),
+            cursorColor: Colors.white,
             inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-            style: TextStyle(
-              color: const Color(0xFF6366F1),
+            style: const TextStyle(
+              color: Colors.white,
               fontWeight: FontWeight.bold,
-              fontSize: 18,
-              // أضفنا خط تحت الرقم عشان المستخدم يعرف إنه مكان قابل للكتابة
-              decoration: TextDecoration.underline,
-              decorationColor: const Color(0xFF6366F1).withOpacity(0.4),
+              fontSize: 20, // رقم واضح وبارز باللون الأبيض
             ),
             decoration: const InputDecoration(
               border: InputBorder.none,
               isDense: true,
-              contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+              contentPadding: EdgeInsets.symmetric(vertical: 8),
             ),
             onChanged: (text) {
               if (text.isEmpty) return;
               int? parsed = int.tryParse(text);
               if (parsed != null) {
-                onChanged(parsed); // تحديث القيمة منطقياً فقط في الخلفية
+                onChanged(parsed); // تحديث القيمة في الخلفية
               }
             },
           ),
         ),
         const SizedBox(width: 8),
 
-        // زر الزائد (+) بحجم مناسب للنص
+        // زر الزائد (+) بحجم كبير وأنيق
         IconButton(
           onPressed: (_totalPages == 0 || value < max) ? onIncrement : null,
           icon: const Icon(Icons.add_circle_outline_rounded),
           color: const Color(0xFF6366F1),
-          iconSize: 22,
-          padding: EdgeInsets.zero,
-          constraints: const BoxConstraints(),
+          iconSize: 28,
         ),
       ],
     );

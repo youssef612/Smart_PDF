@@ -11,16 +11,24 @@ class HistoryStore {
     final data = prefs.getString(key);
     List list = data != null ? jsonDecode(data) : [];
 
-    // استخدمي الـ id اللي جاي من الـ Laravel لو موجود، لو مش موجود خليه وقت
-    // ده بيضمن إن الملف مربوط فعلاً بالداتا بيز
     String uniqueId =
         item['file_id']?.toString() ??
         DateTime.now().millisecondsSinceEpoch.toString();
-    item['id'] = "${uniqueId}_${item['type']}"; // مثلاً 55_summary
 
-    // امنعي التكرار: لو موجود قبل كده امسحيه وحطي الجديد (تحديث)
+    final String type = item['type'] ?? '';
+    item['id'] = "${uniqueId}_${type}";
 
-    list.add(item);
+    // السؤال: يتضاف دائماً كعنصر جديد (مع timestamp فريد في الـ id)
+    if (type == 'quiz' || type == 'questions') {
+      item['id'] =
+          "${uniqueId}_${type}_${DateTime.now().millisecondsSinceEpoch}";
+      list.add(item);
+    } else {
+      // شرح/تلخيص: احذف القديم وضيف الجديد
+      list.removeWhere((e) => e['id'] == item['id']);
+      list.add(item);
+    }
+
     await prefs.setString(key, jsonEncode(list));
   }
 
