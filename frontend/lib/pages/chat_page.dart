@@ -340,6 +340,8 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
   }
 
   @override
+  // ── تعديل تابع الـ build الرئيسي ──────────────────────────────────────
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
@@ -367,8 +369,8 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
               ),
               child: Column(
                 children: [
-                  if (isDocumentChat && widget.fileName != null)
-                    _buildFileBar(theme, isDark),
+                  // ❌ قم بحذف أو مسح هذا السطر تماماً لتختفي الـ Bar:
+                  // if (isDocumentChat && widget.fileName != null) _buildFileBar(theme, isDark),
                   Expanded(
                     child: _messages.isEmpty
                         ? _buildEmptyState(theme, isDark)
@@ -398,7 +400,6 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
       ),
     );
   }
-
   // ── App Bar ──────────────────────────────────────────────────────────────
 
   PreferredSizeWidget _buildAppBar(ThemeData theme, bool isDark) {
@@ -406,13 +407,11 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
       elevation: 0,
       scrolledUnderElevation: 0,
       backgroundColor: theme.cardColor,
-      // ✅ تم زيادة الـ Width لـ 100 لتفادي أي ضغط أو تداخل للأزرار على الشاشات الصغيرة
       leadingWidth: 100,
       leading: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           const SizedBox(width: 6),
-          // 1️⃣ زرار الرجوع
           IconButton(
             constraints: const BoxConstraints(),
             padding: const EdgeInsets.all(4),
@@ -426,14 +425,13 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
               ),
               child: Icon(
                 Icons.arrow_back_ios_new_rounded,
-                size: 13, // حجم متناسق للـ Back arrow
+                size: 13,
                 color: theme.textTheme.bodyLarge?.color,
               ),
             ),
             onPressed: () => Navigator.pop(context),
           ),
           const SizedBox(width: 2),
-          // 2️⃣ زرار الهيستوري
           Builder(
             builder: (context) => IconButton(
               constraints: const BoxConstraints(),
@@ -472,28 +470,73 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
             ),
           ),
           const SizedBox(width: 10),
-          Column(
-            crossAxisAlignment:
-                CrossAxisAlignment.start, // ✅ تصليح الخطأ المطبعي هنا
-            children: [
-              Text(
-                isDocumentChat
-                    ? (isArabic ? 'شات المستند' : 'Document Chat')
-                    : (isArabic ? 'الشات الذكي' : 'Smart Chat'),
-                style: const TextStyle(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 15,
+          Expanded(
+            // أضفنا Expanded لحماية النصوص من التداخل
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  isDocumentChat
+                      ? (isArabic ? 'شات المستند' : 'Document Chat')
+                      : (isArabic ? 'الشات الذكي' : 'Smart Chat'),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14, // صغرنا الحجم درجة واحدة لتوفير مساحة للملف
+                  ),
                 ),
-              ),
-              Text(
-                isArabic ? 'مدعوم بالذكاء الاصطناعي' : 'AI Powered',
-                style: TextStyle(
-                  fontSize: 11,
-                  color: Colors.grey[500],
-                  fontWeight: FontWeight.w400,
-                ),
-              ),
-            ],
+                const SizedBox(height: 2),
+                // هنا السحر: إذا كان هناك ملف، يظهر كـ Tag أنيق جداً وبحجم صغير
+                if (isDocumentChat && widget.fileName != null)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(
+                        0xFF3B82F6,
+                      ).withOpacity(isDark ? 0.15 : 0.08),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(
+                        color: const Color(0xFF3B82F6).withOpacity(0.2),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.picture_as_pdf_rounded,
+                          color: Color(0xFF3B82F6),
+                          size: 11,
+                        ),
+                        const SizedBox(width: 4),
+                        Flexible(
+                          child: Text(
+                            widget.fileName!,
+                            style: const TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF3B82F6),
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                else
+                  Text(
+                    isArabic ? 'مدعوم بالذكاء الاصطناعي' : 'AI Powered',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Colors.grey[500],
+                      fontWeight: FontWeight.w400,
+                    ),
+                  ),
+              ],
+            ),
           ),
         ],
       ),
@@ -508,7 +551,6 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
       ),
     );
   }
-
   // ── شريط الملف ───────────────────────────────────────────────────────────
 
   Widget _buildFileBar(ThemeData theme, bool isDark) {
@@ -989,28 +1031,56 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                   width: _hasText ? 1.5 : 1,
                 ),
               ),
-              child: TextField(
-                controller: _controller,
-                maxLines: null,
-                keyboardType: TextInputType.multiline,
-                textInputAction: TextInputAction.newline,
-                textDirection: isArabic ? TextDirection.rtl : TextDirection.ltr,
-                style: TextStyle(
-                  fontSize: 14,
-                  height: 1.5,
-                  color: theme.textTheme.bodyLarge?.color,
-                ),
-                decoration: InputDecoration(
-                  hintText: isDocumentChat
-                      ? (isArabic
-                            ? 'اسأل عن المستند...'
-                            : 'Ask about the document...')
-                      : (isArabic ? 'اكتب رسالتك...' : 'Type a message...'),
-                  hintStyle: TextStyle(color: Colors.grey[500], fontSize: 14),
-                  border: InputBorder.none,
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 18,
-                    vertical: 12,
+              // 🛠️ الحل: تغليف الـ TextField بـ KeyboardListener للتحكم الكامل في الأزرار
+              child: KeyboardListener(
+                focusNode: FocusNode(), // نود مؤقتة للقراءة
+                onKeyEvent: (KeyEvent event) {
+                  // نتحقق إن الزرار المضغوط هو Enter وإنه في وضعية الضغط (KeyDown) وليس الرفع
+                  if (event is KeyDownEvent &&
+                      event.logicalKey == LogicalKeyboardKey.enter) {
+                    // إذا كان المستخدم ضاغط Shift مع Enter -> خليه ينزل سطر عادي ومتعملش إرسال
+                    if (HardwareKeyboard.instance.isShiftPressed) {
+                      return;
+                    }
+
+                    // إذا كان Enter لوحده -> ابعت الرسالة فوراً ومنع الزرار إنه ينزل سطر جديد
+                    if (_hasText && !_isLoading) {
+                      _sendMessage();
+                    }
+                  }
+                },
+                child: TextField(
+                  controller: _controller,
+                  maxLines: null,
+                  keyboardType: TextInputType.multiline,
+                  // تحويل زرار الكيبورد في الموبايل لـ "إرسال" بدلاً من سطر جديد
+                  textInputAction: TextInputAction.send,
+                  textDirection: isArabic
+                      ? TextDirection.rtl
+                      : TextDirection.ltr,
+                  style: TextStyle(
+                    fontSize: 14,
+                    height: 1.5,
+                    color: theme.textTheme.bodyLarge?.color,
+                  ),
+                  // عند الضغط على زر الإرسال من كيبورد الموبايل (التاتش)
+                  onSubmitted: (_) {
+                    if (_hasText && !_isLoading) {
+                      _sendMessage();
+                    }
+                  },
+                  decoration: InputDecoration(
+                    hintText: isDocumentChat
+                        ? (isArabic
+                              ? 'اسأل عن المستند...'
+                              : 'Ask about the document...')
+                        : (isArabic ? 'اكتب رسالتك...' : 'Type a message...'),
+                    hintStyle: TextStyle(color: Colors.grey[500], fontSize: 14),
+                    border: InputBorder.none,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 18,
+                      vertical: 12,
+                    ),
                   ),
                 ),
               ),

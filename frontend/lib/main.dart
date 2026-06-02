@@ -10,7 +10,8 @@ import 'services/history_store.dart';
 // ✅ ضيف السطر ده براحته هنا
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
-void main() async {  // ← لازم async
+void main() async {
+  // ← لازم async
   WidgetsFlutterBinding.ensureInitialized();
   if (Platform.isLinux || Platform.isWindows || Platform.isMacOS) {
     await windowManager.ensureInitialized();
@@ -27,7 +28,7 @@ void main() async {  // ← لازم async
   if (Platform.isLinux || Platform.isWindows || Platform.isMacOS) {
     await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
   }
-  
+
   runApp(const MyApp());
 }
 

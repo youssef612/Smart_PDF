@@ -23,6 +23,7 @@ import 'sign_in_page.dart';
 import 'history_page.dart';
 import 'widgets/particles_painter.dart';
 import 'chat_page.dart';
+import '../main.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({Key? key}) : super(key: key);
@@ -43,7 +44,7 @@ class _HomePageState extends State<HomePage>
   int _selectedPageCount = 0;
   bool _isFileProcessing = false;
   bool _isDragging = false;
-  bool _isUploading = false; // ← يتابع حالة الرفع الآن بشكل صحيح
+  bool _isUploading = false;
 
   late String _selectedLanguage;
 
@@ -280,7 +281,7 @@ class _HomePageState extends State<HomePage>
   }
 
   Future<void> _pickPDF() async {
-    if (_isUploading) return; // منع الضغط المتكرر أثناء الرفع
+    if (_isUploading) return;
 
     try {
       FilePickerResult? result = await FilePicker.platform.pickFiles(
@@ -298,7 +299,7 @@ class _HomePageState extends State<HomePage>
 
       if (bytes == null) return;
 
-      setState(() => _isUploading = true); // تفعيل واجهة التحميل
+      setState(() => _isUploading = true);
 
       final uploadedFile = await _filesService.uploadFileBytes(
         bytes,
@@ -312,7 +313,7 @@ class _HomePageState extends State<HomePage>
           _selectedFileId = uploadedFile['id']?.toString();
           _selectedPageCount = (uploadedFile['page_count'] ?? 0) as int;
           _isFileProcessing = uploadedFile['has_text'] == false;
-          _isUploading = false; // إلغاء التحميل بعد النجاح
+          _isUploading = false;
         });
 
         if (mounted) {
@@ -673,6 +674,8 @@ class _HomePageState extends State<HomePage>
     ThemeData theme,
     ImageProvider? avatarImage,
   ) {
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return AppBar(
       title: Row(
         children: [
@@ -704,6 +707,51 @@ class _HomePageState extends State<HomePage>
       foregroundColor: theme.textTheme.bodyLarge?.color,
       elevation: 0,
       actions: [
+        Tooltip(
+          message: isDarkMode
+              ? (isArabic ? 'تفعيل الوضع الفاتح' : 'Switch to Light Mode')
+              : (isArabic ? 'تفعيل الوضع الداكن' : 'Switch to Dark Mode'),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(30),
+            onTap: () {
+              MyApp.of(
+                context,
+              ).changeTheme(isDarkMode ? ThemeMode.light : ThemeMode.dark);
+            },
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 300),
+              padding: const EdgeInsets.all(8),
+              margin: const EdgeInsets.symmetric(horizontal: 4),
+              decoration: BoxDecoration(
+                color: isDarkMode
+                    ? Colors.amber.withOpacity(0.1)
+                    : const Color(0xFF6366F1).withOpacity(0.08),
+                shape: BoxShape.circle,
+              ),
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 300),
+                transitionBuilder: (Widget child, Animation<double> animation) {
+                  return RotationTransition(
+                    turns: Tween<double>(
+                      begin: 0.75,
+                      end: 1.0,
+                    ).animate(animation),
+                    child: ScaleTransition(scale: animation, child: child),
+                  );
+                },
+                child: Icon(
+                  isDarkMode ? Icons.wb_sunny_rounded : Icons.nightlight_round,
+                  key: ValueKey<bool>(isDarkMode),
+                  color: isDarkMode ? Colors.amber : const Color(0xFF6366F1),
+                  size: 22,
+                ),
+              ),
+            ),
+          ),
+        ),
+
+        const SizedBox(width: 8),
+
         Hero(
           tag: 'profile_avatar',
           child: Material(
@@ -712,7 +760,7 @@ class _HomePageState extends State<HomePage>
               onTap: _navigateToPersonalPage,
               borderRadius: BorderRadius.circular(30),
               child: Container(
-                margin: const EdgeInsets.only(right: 16),
+                margin: const EdgeInsets.only(right: 16, left: 16),
                 child: CircleAvatar(
                   radius: 20,
                   backgroundImage: avatarImage,
@@ -818,7 +866,7 @@ class _HomePageState extends State<HomePage>
       onDragEntered: (_) => setState(() => _isDragging = true),
       onDragExited: (_) => setState(() => _isDragging = false),
       onDragDone: (details) async {
-        if (_isUploading) return; // منع الإسقاط المتكرر أثناء الرفع الحالي
+        if (_isUploading) return;
 
         setState(() => _isDragging = false);
         final files = details.files
@@ -835,9 +883,7 @@ class _HomePageState extends State<HomePage>
         final bytes = await file.readAsBytes();
         final fileName = file.name;
 
-        setState(
-          () => _isUploading = true,
-        ); // تفعيل واجهة التحميل أثناء السحب والإفلات
+        setState(() => _isUploading = true);
 
         final uploadedFile = await _filesService.uploadFileBytes(
           bytes,
@@ -879,10 +925,7 @@ class _HomePageState extends State<HomePage>
                   ? const LinearGradient(
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
-                      colors: [
-                        Color(0xFF8B8FD4),
-                        const Color(0xFFA78BCA),
-                      ], // بهتان الألوان أثناء الرفع
+                      colors: [Color(0xFF8B8FD4), Color(0xFFA78BCA)],
                     )
                   : _isDragging
                   ? const LinearGradient(
@@ -944,8 +987,8 @@ class _HomePageState extends State<HomePage>
                   child: AnimatedSwitcher(
                     duration: const Duration(milliseconds: 300),
                     child: _isUploading
-                        ? _buildUploadingState() // عرض أنيميشن التحميل الحالي
-                        : _buildIdleUploadState(), // عرض واجهة الرفع العادية
+                        ? _buildUploadingState()
+                        : _buildIdleUploadState(),
                   ),
                 ),
               ],
@@ -956,7 +999,6 @@ class _HomePageState extends State<HomePage>
     );
   }
 
-  // واجهة الرفع العادية الثابتة
   Widget _buildIdleUploadState() {
     return Column(
       key: const ValueKey('idle'),
@@ -1001,7 +1043,6 @@ class _HomePageState extends State<HomePage>
     );
   }
 
-  // واجهة المؤشر الدائري أثناء عملية الرفع
   Widget _buildUploadingState() {
     return Column(
       key: const ValueKey('uploading'),
@@ -1401,7 +1442,7 @@ class Feature {
   });
 }
 
-class AppDrawer extends StatelessWidget {
+class AppDrawer extends StatefulWidget {
   final Map<String, dynamic>? user;
   final VoidCallback onLogout;
   final String selectedLanguage;
@@ -1417,7 +1458,32 @@ class AppDrawer extends StatelessWidget {
     this.selectedFileName,
   }) : super(key: key);
 
-  bool get isArabic => selectedLanguage == 'arabic';
+  @override
+  State<AppDrawer> createState() => _AppDrawerState();
+}
+
+class _AppDrawerState extends State<AppDrawer>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _drawerAnimationController;
+  int? _hoveredIndex;
+
+  bool get isArabic => widget.selectedLanguage == 'arabic';
+
+  @override
+  void initState() {
+    super.initState();
+    _drawerAnimationController = AnimationController(
+      duration: const Duration(milliseconds: 600),
+      vsync: this,
+    );
+    _drawerAnimationController.forward();
+  }
+
+  @override
+  void dispose() {
+    _drawerAnimationController.dispose();
+    super.dispose();
+  }
 
   String _getInitials(String? name) {
     if (name == null || name.isEmpty) return 'U';
@@ -1436,19 +1502,20 @@ class AppDrawer extends StatelessWidget {
   }
 
   ImageProvider? _getUserAvatar() {
-    if (user == null) return null;
+    if (widget.user == null) return null;
 
-    if (user!['avatarBytes'] != null) {
+    if (widget.user!['avatarBytes'] != null) {
       try {
-        Uint8List bytes = base64Decode(user!['avatarBytes']);
+        Uint8List bytes = base64Decode(widget.user!['avatarBytes']);
         return MemoryImage(bytes);
       } catch (e) {
         return null;
       }
     }
 
-    if (user!['avatar'] != null && user!['avatar'].toString().isNotEmpty) {
-      return NetworkImage(user!['avatar']);
+    if (widget.user!['avatar'] != null &&
+        widget.user!['avatar'].toString().isNotEmpty) {
+      return NetworkImage(widget.user!['avatar']);
     }
 
     return null;
@@ -1462,76 +1529,91 @@ class AppDrawer extends StatelessWidget {
     return Drawer(
       child: Column(
         children: [
-          Container(
-            width: double.infinity,
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
+          FadeTransition(
+            opacity: Tween<double>(begin: 0.0, end: 1.0).animate(
+              CurvedAnimation(
+                parent: _drawerAnimationController,
+                curve: const Interval(0.0, 0.5, curve: Curves.easeOut),
               ),
             ),
-            child: SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(24, 40, 24, 24),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Hero(
-                      tag: 'profile_avatar_drawer',
-                      child: CircleAvatar(
-                        radius: 40,
-                        backgroundImage: avatarImage,
-                        backgroundColor: Colors.white,
-                        child: avatarImage == null
-                            ? Text(
-                                _getInitials(user?['name']),
-                                style: TextStyle(
-                                  color: _getColorFromName(user?['name']),
-                                  fontSize: Responsive.fontSize(context, 32),
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              )
-                            : null,
+            child: Container(
+              width: double.infinity,
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
+                ),
+              ),
+              child: SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 40, 24, 24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Hero(
+                        tag: 'profile_avatar_drawer',
+                        child: CircleAvatar(
+                          radius: 40,
+                          backgroundImage: avatarImage,
+                          backgroundColor: Colors.white,
+                          child: avatarImage == null
+                              ? Text(
+                                  _getInitials(widget.user?['name']),
+                                  style: TextStyle(
+                                    color: _getColorFromName(
+                                      widget.user?['name'],
+                                    ),
+                                    fontSize: 28,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                )
+                              : null,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      user?['name'] ?? (isArabic ? 'مستخدم' : 'User'),
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
+                      const SizedBox(height: 16),
+                      Text(
+                        widget.user?['name'] ?? (isArabic ? 'مستخدم' : 'User'),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      user?['email'] ?? '',
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 14,
+                      const SizedBox(height: 4),
+                      Text(
+                        widget.user?['email'] ?? '',
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 15,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
           ),
           Expanded(
             child: ListView(
-              padding: EdgeInsets.zero,
+              padding: const EdgeInsets.symmetric(
+                vertical: 8,
+                horizontal: 12,
+              ), // إرجاع الـ Padding الأصلي الملموم
               children: [
-                _buildDrawerItem(
+                _buildAnimatedDrawerItem(
                   context,
-                  Icons.home_rounded,
-                  isArabic ? 'الرئيسية' : 'Home',
-                  () => Navigator.pop(context),
+                  icon: Icons.home_rounded,
+                  title: isArabic ? 'الرئيسية' : 'Home',
+                  index: 0,
+                  onTap: () => Navigator.pop(context),
                 ),
-                _buildDrawerItem(
+                _buildAnimatedDrawerItem(
                   context,
-                  Icons.folder_rounded,
-                  isArabic ? 'مستنداتي' : 'My Documents',
-                  () {
+                  icon: Icons.folder_rounded,
+                  title: isArabic ? 'مستنداتي' : 'My Documents',
+                  index: 1,
+                  onTap: () {
                     Navigator.pop(context);
                     Navigator.push(
                       context,
@@ -1542,29 +1624,31 @@ class AppDrawer extends StatelessWidget {
                     );
                   },
                 ),
-                _buildDrawerItem(
+                _buildAnimatedDrawerItem(
                   context,
-                  Icons.chat_rounded,
-                  isArabic ? 'الشات الذكي' : 'Smart Chat',
-                  () {
+                  icon: Icons.chat_rounded,
+                  title: isArabic ? 'الشات الذكي' : 'Smart Chat',
+                  index: 2,
+                  onTap: () {
                     Navigator.pop(context);
                     Navigator.push(
                       context,
                       PageTransition(
                         child: ChatPage(
-                          fileId: selectedFileId ?? '',
-                          fileName: selectedFileName,
+                          fileId: widget.selectedFileId ?? '',
+                          fileName: widget.selectedFileName,
                         ),
                         type: PageTransitionType.slideFromRight,
                       ),
                     );
                   },
                 ),
-                _buildDrawerItem(
+                _buildAnimatedDrawerItem(
                   context,
-                  Icons.settings_rounded,
-                  isArabic ? 'الإعدادات' : 'Settings',
-                  () {
+                  icon: Icons.settings_rounded,
+                  title: isArabic ? 'الإعدادات' : 'Settings',
+                  index: 3,
+                  onTap: () {
                     Navigator.pop(context);
                     Navigator.push(
                       context,
@@ -1578,16 +1662,31 @@ class AppDrawer extends StatelessWidget {
                     });
                   },
                 ),
-                const Divider(),
-                _buildDrawerItem(
+                FadeTransition(
+                  opacity: Tween<double>(begin: 0.0, end: 1.0).animate(
+                    CurvedAnimation(
+                      parent: _drawerAnimationController,
+                      curve: const Interval(0.4, 0.8, curve: Curves.easeIn),
+                    ),
+                  ),
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: 8.0,
+                      vertical: 4.0,
+                    ),
+                    child: Divider(),
+                  ),
+                ),
+                _buildAnimatedDrawerItem(
                   context,
-                  Icons.logout_rounded,
-                  isArabic ? 'تسجيل الخروج' : 'Logout',
-                  () {
-                    Navigator.pop(context);
-                    onLogout();
-                  },
+                  icon: Icons.logout_rounded,
+                  title: isArabic ? 'تسجيل الخروج' : 'Logout',
+                  index: 4,
                   color: Colors.red,
+                  onTap: () {
+                    Navigator.pop(context);
+                    widget.onLogout();
+                  },
                 ),
               ],
             ),
@@ -1597,34 +1696,127 @@ class AppDrawer extends StatelessWidget {
     );
   }
 
-  Widget _buildDrawerItem(
-    BuildContext context,
-    IconData icon,
-    String title,
-    VoidCallback onTap, {
+  Widget _buildAnimatedDrawerItem(
+    BuildContext context, {
+    required IconData icon,
+    required String title,
+    required int index,
+    required VoidCallback onTap,
     Color? color,
   }) {
-    return ListTile(
-      leading: Container(
-        padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(
-          color: (color ?? Theme.of(context).primaryColor).withOpacity(0.1),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Icon(
-          icon,
-          color: color ?? Theme.of(context).primaryColor,
-          size: 20,
+    final theme = Theme.of(context);
+    final double start = 0.1 + (index * 0.08);
+    final double end = (start + 0.4).clamp(0.0, 1.0);
+
+    final Animation<double> fadeAnimation = Tween<double>(begin: 0.0, end: 1.0)
+        .animate(
+          CurvedAnimation(
+            parent: _drawerAnimationController,
+            curve: Interval(start, end, curve: Curves.easeInOut),
+          ),
+        );
+
+    final Animation<Offset> slideAnimation =
+        Tween<Offset>(begin: const Offset(0.08, 0.0), end: Offset.zero).animate(
+          CurvedAnimation(
+            parent: _drawerAnimationController,
+            curve: Interval(start, end, curve: Curves.easeOutCubic),
+          ),
+        );
+
+    final isHovered = _hoveredIndex == index;
+    final itemColor = color ?? theme.primaryColor;
+
+    return FadeTransition(
+      opacity: fadeAnimation,
+      child: SlideTransition(
+        position: slideAnimation,
+        child: MouseRegion(
+          cursor: SystemMouseCursors.click,
+          onEnter: (_) => setState(() => _hoveredIndex = index),
+          onExit: (_) => setState(() => _hoveredIndex = null),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 250),
+            curve: Curves.easeInOut,
+            margin: const EdgeInsets.symmetric(
+              vertical: 4,
+            ), // رجعت للمسافة القديمة الملمومة والشيك جداً
+            decoration: BoxDecoration(
+              color: isHovered
+                  ? itemColor.withOpacity(0.08)
+                  : Colors.transparent,
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Stack(
+              children: [
+                ListTile(
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 2,
+                  ), // الـ Padding الأصلي الملموم
+                  onTap: onTap,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  leading: AnimatedContainer(
+                    duration: const Duration(milliseconds: 250),
+                    curve: Curves.easeInOut,
+                    padding: const EdgeInsets.all(
+                      8,
+                    ), // البوكس الأصلي بدون فراغ مبالغ فيه
+                    decoration: BoxDecoration(
+                      color: isHovered
+                          ? itemColor.withOpacity(0.15)
+                          : itemColor.withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: AnimatedPadding(
+                      duration: const Duration(milliseconds: 250),
+                      curve: Curves.easeInOut,
+                      padding: EdgeInsets.only(
+                        right: isHovered && isArabic ? 4.0 : 0.0,
+                        left: isHovered && !isArabic ? 4.0 : 0.0,
+                      ),
+                      child: Icon(
+                        icon,
+                        color: itemColor,
+                        size: 20,
+                      ), // الحجم الأصلي المتناسق
+                    ),
+                  ),
+                  title: AnimatedDefaultTextStyle(
+                    duration: const Duration(milliseconds: 200),
+                    style: TextStyle(
+                      color:
+                          color ??
+                          theme.textTheme.bodyLarge?.color ??
+                          Colors.black,
+                      fontWeight: isHovered ? FontWeight.w700 : FontWeight.w600,
+                      fontSize:
+                          16, // الخط كبير وواضح مع الحفاظ على الأبعاد الضيقة الملمومة للـ ListTile
+                    ),
+                    child: Text(title),
+                  ),
+                ),
+                Positioned(
+                  top: 12,
+                  bottom: 12,
+                  left: isArabic ? null : 0,
+                  right: isArabic ? 0 : null,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 250),
+                    width: isHovered ? 4 : 0,
+                    decoration: BoxDecoration(
+                      color: itemColor,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
-      title: Text(
-        title,
-        style: TextStyle(
-          color: color ?? Theme.of(context).textTheme.bodyLarge?.color,
-          fontWeight: FontWeight.w500,
-        ),
-      ),
-      onTap: onTap,
     );
   }
 }

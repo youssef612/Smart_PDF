@@ -17,30 +17,46 @@ class ChatHistoryDrawer extends StatefulWidget {
   State<ChatHistoryDrawer> createState() => _ChatHistoryDrawerState();
 }
 
-class _ChatHistoryDrawerState extends State<ChatHistoryDrawer> {
+class _ChatHistoryDrawerState extends State<ChatHistoryDrawer>
+    with SingleTickerProviderStateMixin {
   List<dynamic> _conversations = [];
   bool _isLoading = true;
+
+  AnimationController? _listAnimationController;
 
   @override
   void initState() {
     super.initState();
+    _listAnimationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 500),
+    );
     _loadConversations();
+  }
+
+  @override
+  void dispose() {
+    _listAnimationController?.dispose();
+    super.dispose();
   }
 
   Future<void> _loadConversations() async {
     try {
       final response = await ApiService().getConversations();
       if (response['success'] == true) {
-        setState(() {
-          _conversations = response['data'] ?? [];
-          _isLoading = false;
-        });
+        if (mounted) {
+          setState(() {
+            _conversations = response['data'] ?? [];
+            _isLoading = false;
+          });
+          _listAnimationController?.forward();
+        }
       } else {
-        setState(() => _isLoading = false);
+        if (mounted) setState(() => _isLoading = false);
       }
     } catch (e) {
-      setState(() => _isLoading = false);
       if (mounted) {
+        setState(() => _isLoading = false);
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('Error loading history: $e')));
@@ -68,17 +84,11 @@ class _ChatHistoryDrawerState extends State<ChatHistoryDrawer> {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
 
-    // 🎨 هنا الـ Drawer بيلبس ألوان مشروعك الأساسية تلقائياً
     final drawerBg = isDark ? const Color(0xFF1E1E1E) : const Color(0xFFF8FAFC);
-
-    // لو مختار المحادثة، بتاخد لون مشروعك الصريح (primaryColor) سواء أزرق أو بنفسجي
     final selectedColor = theme.primaryColor;
-
-    // خلفية العنصر المحدد بتاخد تشبيعة خفيفة جداً من لون مشروعك عشان تريح العين
     final selectedTileBg = theme.primaryColor.withOpacity(isDark ? 0.15 : 0.08);
-
-    // الألوان العادية للمحادثات غير المحددة
     final textAndIconColor = isDark ? Colors.white70 : Colors.black87;
+
     return Drawer(
       backgroundColor: drawerBg,
       child: SafeArea(
@@ -89,10 +99,12 @@ class _ChatHistoryDrawerState extends State<ChatHistoryDrawer> {
               padding: const EdgeInsets.all(12.0),
               child: OutlinedButton.icon(
                 style: OutlinedButton.styleFrom(
-                  // الزرار بياخد لون المشروع عشان ينطق في الواجهة
                   foregroundColor: selectedColor,
                   side: BorderSide(color: selectedColor.withOpacity(0.32)),
                   minimumSize: const Size.fromHeight(50),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                   alignment: isArabic
                       ? Alignment.centerRight
                       : Alignment.centerLeft,
@@ -129,50 +141,48 @@ class _ChatHistoryDrawerState extends State<ChatHistoryDrawer> {
                         final id = chat['id'].toString();
                         final isSelected = id == widget.currentConversationId;
 
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 2),
-                          child: ListTile(
-                            selected: isSelected,
-                            selectedTileColor:
-                                selectedTileBg, // التشبيعة الهادية من لون مشروعك
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            leading: Icon(
-                              chat['type'] == 'document'
-                                  ? Icons.description_outlined
-                                  : Icons.chat_bubble_outline,
-                              color: isSelected
-                                  ? selectedColor
-                                  : textAndIconColor,
-                              size: 18,
-                            ),
-                            title: Text(
-                              chat['title'] ??
-                                  (isArabic ? 'محادثة جديدة' : 'New Chat'),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: isSelected
-                                    ? selectedColor
-                                    : textAndIconColor,
-                                fontSize: 13.5,
-                                fontWeight: isSelected
-                                    ? FontWeight.w600
-                                    : FontWeight.w400,
+                        final itemDelay = (index * 0.05).clamp(0.0, 0.99);
+
+                        final itemAnimation =
+                            Tween<double>(begin: 0.0, end: 1.0).animate(
+                              CurvedAnimation(
+                                parent: _listAnimationController!,
+                                curve: Interval(
+                                  itemDelay,
+                                  1.0,
+                                  curve: Curves.easeOutCubic,
+                                ),
                               ),
-                            ),
-                            trailing: isSelected
-                                ? IconButton(
-                                    icon: const Icon(
-                                      Icons.delete_outline_rounded,
-                                      size: 18,
-                                      color: Colors.redAccent,
-                                    ),
-                                    onPressed: () =>
-                                        _deleteConversation(id, index),
-                                  )
-                                : null,
+                            );
+
+                        return AnimatedBuilder(
+                          animation: _listAnimationController!,
+                          builder: (context, child) {
+                            return Opacity(
+                              opacity: itemAnimation.value,
+                              child: Transform.translate(
+                                offset: Offset(
+                                  0,
+                                  24 * (1.0 - itemAnimation.value),
+                                ),
+                                child: child,
+                              ),
+                            );
+                          },
+                          child: HoverableChatTile(
+                            key: ValueKey(
+                              'tile_$id',
+                            ), // استخدام مفتاح فريد لكل سطر بالكامل لمنع الـ Duplicate Keys
+                            chat: chat,
+                            id: id,
+                            index: index,
+                            isSelected: isSelected,
+                            selectedColor: selectedColor,
+                            selectedTileBg: selectedTileBg,
+                            textAndIconColor: textAndIconColor,
+                            isDark: isDark,
+                            isArabic: isArabic,
+                            onDelete: () => _deleteConversation(id, index),
                             onTap: () {
                               Navigator.pop(context);
                               widget.onConversationSelected(chat);
@@ -188,6 +198,148 @@ class _ChatHistoryDrawerState extends State<ChatHistoryDrawer> {
     );
   }
 
-  // الـ helper ده عشان نتاكد من لغة الجهاز أوتوماتيك للـ alignment
   bool get isArabic => Localizations.localeOf(context).languageCode == 'ar';
+}
+
+// ── 🚀 ويدجت الـ Hover المحدثة والمؤمنة بالكامل بالـ Row ──────────────────
+class HoverableChatTile extends StatefulWidget {
+  final dynamic chat;
+  final String id;
+  final int index;
+  final bool isSelected;
+  final Color selectedColor;
+  final Color selectedTileBg;
+  final Color textAndIconColor;
+  final bool isDark;
+  final bool isArabic;
+  final VoidCallback onDelete;
+  final VoidCallback onTap;
+
+  const HoverableChatTile({
+    Key? key,
+    required this.chat,
+    required this.id,
+    required this.index,
+    required this.isSelected,
+    required this.selectedColor,
+    required this.selectedTileBg,
+    required this.textAndIconColor,
+    required this.isDark,
+    required this.isArabic,
+    required this.onDelete,
+    required this.onTap,
+  }) : super(key: key);
+
+  @override
+  State<HoverableChatTile> createState() => _HoverableChatTileState();
+}
+
+class _HoverableChatTileState extends State<HoverableChatTile> {
+  bool _isHovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final effectiveBgColor = widget.isSelected
+        ? widget.selectedTileBg
+        : (_isHovered
+              ? widget.selectedColor.withOpacity(widget.isDark ? 0.12 : 0.06)
+              : Colors.transparent);
+
+    final currentElementColor = widget.isSelected
+        ? widget.selectedColor
+        : (_isHovered ? widget.selectedColor : widget.textAndIconColor);
+
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeInOutCubic,
+        margin: const EdgeInsets.symmetric(vertical: 2),
+        transform: Matrix4.identity()
+          ..translate(_isHovered ? (widget.isArabic ? -5.0 : 5.0) : 0.0)
+          ..scale(_isHovered ? 1.02 : 1.0),
+        decoration: BoxDecoration(
+          color: effectiveBgColor,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: _isHovered && !widget.isSelected
+                  ? widget.selectedColor.withOpacity(
+                      widget.isDark ? 0.08 : 0.04,
+                    )
+                  : Colors.transparent,
+              blurRadius: 6.0,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: widget.onTap,
+            splashColor: widget.selectedColor.withOpacity(0.08),
+            highlightColor: Colors.transparent,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              child: Row(
+                children: [
+                  AnimatedRotation(
+                    duration: const Duration(milliseconds: 200),
+                    turns: _isHovered && !widget.isSelected ? 0.02 : 0.0,
+                    child: Icon(
+                      widget.chat['type'] == 'document'
+                          ? Icons.description_outlined
+                          : Icons.chat_bubble_outline,
+                      color: currentElementColor,
+                      size: 18,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      widget.chat['title'] ??
+                          (widget.isArabic ? 'محادثة جديدة' : 'New Chat'),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: currentElementColor,
+                        fontSize: 13.5,
+                        fontWeight: widget.isSelected || _isHovered
+                            ? FontWeight.w600
+                            : FontWeight.w400,
+                      ),
+                    ),
+                  ),
+                  // 🛠️ التعديل الأمني: استبدال الـ AnimatedSwitcher بـ AnimatedOpacity صريح ومعزول تماماً
+                  // ده بيمنع إعادة بناء وتدمير الـ Widgets اللي كان بيسبب كراش الـ referenceBox
+                  AnimatedOpacity(
+                    duration: const Duration(milliseconds: 200),
+                    opacity: widget.isSelected ? 1.0 : 0.0,
+                    child: Visibility(
+                      visible: widget.isSelected,
+                      maintainSize: false,
+                      child: GestureDetector(
+                        onTap: widget.onDelete,
+                        child: const Padding(
+                          padding: EdgeInsets.all(4.0),
+                          child: Icon(
+                            Icons.delete_outline_rounded,
+                            size: 18,
+                            color: Colors.redAccent,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
