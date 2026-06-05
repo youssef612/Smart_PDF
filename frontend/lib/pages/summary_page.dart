@@ -12,10 +12,10 @@ import 'package:project_flutter/pages/widgets/math_markdown.dart';
 import 'widgets/particles_painter.dart';
 import 'widgets/pdf_export.dart';
 import 'widgets/word_export.dart';
+import 'package:project_flutter/services/files_service.dart';
+import 'home_page.dart';
+import 'package:dio/dio.dart';
 
-// ─────────────────────────────────────────────────────────────
-//  SummaryPage
-// ─────────────────────────────────────────────────────────────
 class SummaryPage extends StatefulWidget {
   final String? fileName;
   final String? fileId;
@@ -23,6 +23,7 @@ class SummaryPage extends StatefulWidget {
   final int pageCount;
   final int? fromPage;
   final int? toPage;
+  final FilesService filesService;
 
   const SummaryPage({
     Key? key,
@@ -32,6 +33,7 @@ class SummaryPage extends StatefulWidget {
     this.pageCount = 0,
     this.fromPage,
     this.toPage,
+    required this.filesService,
   }) : super(key: key);
 
   @override
@@ -47,21 +49,26 @@ class _SummaryPageState extends State<SummaryPage>
   late Animation<double> _fadeAnimation;
   late Animation<Offset> _slideAnimation;
 
-  // متغيرات التحكم في نطاق الصفحات المحددة
-  int? _selectedFromPage;
-  int? _selectedToPage;
+  String? _activeFileName;
+  String? _activeFileId;
   int _totalPages = 0;
 
-  // ✅ تعريف الـ Controllers هنا لحمايتهم من الـ Rebuild العشوائي ومسح النص
+  int? _selectedFromPage;
+  int? _selectedToPage;
+
   final TextEditingController _fromController = TextEditingController();
   final TextEditingController _toController = TextEditingController();
 
+  final ApiService _apiService = ApiService();
+
+  CancelToken? _cancelToken;
   @override
   void initState() {
     super.initState();
+    _activeFileName = widget.fileName;
+    _activeFileId = widget.fileId;
     _totalPages = widget.pageCount;
 
-    // استرجاع نطاق الصفحات الممرر من صفحة التاريخ (History)
     _selectedFromPage = widget.fromPage ?? 1;
     _selectedToPage = widget.toPage ?? (_totalPages > 0 ? _totalPages : 1);
 
@@ -107,14 +114,137 @@ class _SummaryPageState extends State<SummaryPage>
 
   bool get isArabic => _selectedLanguage == 'arabic';
 
+  // ── ميزة تغيير الملف النشط مباشرة من داخل صفحة الملخص ─────────────────
+  Future<void> _changeActiveFile() async {
+    if (_isGenerating) {
+      _showInfoSnackBar(
+        isArabic
+            ? 'برجاء الانتظار حتى ينتهي إنشاء الملخص الحالي'
+            : 'Please wait until the current summary generation is complete',
+        Colors.orange,
+      );
+      return;
+    }
+
+    await showDialog(
+      context: context,
+      builder: (dialogContext) => FilePickerDialog(
+        filesService: widget.filesService,
+        isArabic: isArabic,
+        currentFileId: _activeFileId,
+        onFileSelected: (fileId, fileName, pageCount) {
+          setState(() {
+            _activeFileId = fileId;
+            _activeFileName = fileName;
+            _totalPages = pageCount;
+            _selectedFromPage = 1;
+            _selectedToPage = pageCount > 0 ? pageCount : 1;
+            _summaryResult = null;
+          });
+        },
+        onFileUploaded: (fileId, fileName, pageCount, isProcessing) {
+          setState(() {
+            _activeFileId = fileId;
+            _activeFileName = fileName;
+            _totalPages = pageCount;
+            _selectedFromPage = 1;
+            _selectedToPage = pageCount > 0 ? pageCount : 1;
+            _summaryResult = null;
+          });
+        },
+        onUploadStart: () => _showInfoSnackBar(
+          isArabic ? 'جاري بدء الرفع...' : 'Starting upload...',
+          const Color(0xFF6366F1),
+        ),
+        onError: (msg) {
+          if (msg.startsWith('__JUST_SAVED_SUCCESS__')) {
+            final savedName = msg.split(':')[1];
+            _showInfoSnackBar(
+              isArabic
+                  ? '$savedName تم حفظه بنجاح'
+                  : '$savedName saved successfully',
+              Colors.green,
+            );
+          } else {
+            _showInfoSnackBar(msg, Colors.red);
+          }
+        },
+      ),
+    );
+  }
+
+  // ── دالة الحماية والتحقق من الرغبة في الخروج أثناء الإنشاء ──
+  Future<bool> _onWillPop() async {
+    if (!_isGenerating) return true;
+
+    final bool? shouldCancel = await showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            const Icon(
+              Icons.warning_amber_rounded,
+              color: Colors.orange,
+              size: 26,
+            ),
+            const SizedBox(width: 10),
+            Text(
+              isArabic ? 'تنبيه: جاري التحميل' : 'Warning: Generating',
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+            ),
+          ],
+        ),
+        content: Text(
+          isArabic
+              ? 'هل أنت متأكد من مغادرة الشاشة؟ سيؤدي ذلك إلى إلغاء عملية إنشاء الملخص الحالية.'
+              : 'Are you sure you want to leave? This will cancel the current summary generation.',
+          style: TextStyle(color: Colors.grey[600], fontSize: 14, height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx, false),
+            child: Text(
+              isArabic ? 'تابع الانتظار' : 'Keep Waiting',
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+            onPressed: () {
+              // 🔒 فرمل الـ Request من السيرفر فوراً في الخلفية
+              if (_cancelToken != null && !_cancelToken!.isCancelled) {
+                _cancelToken!.cancel(
+                  isArabic
+                      ? 'تم إلغاء العملية بواسطة المستخدم'
+                      : 'Cancelled by user',
+                );
+              }
+              Navigator.pop(
+                dialogCtx,
+                true,
+              ); // اخرج من الديالوج وأكد الخروج من الشاشة
+            },
+            child: Text(isArabic ? 'إلغاء ومغادرة' : 'Cancel & Leave'),
+          ),
+        ],
+      ),
+    );
+
+    return shouldCancel ?? false;
+  }
+
   // ── Page Range Dialog ───────────────────────────────────────────
-  // ── Page Range Dialog مصلح ومحمي بالكامل ───────────────────────────────────────────
-  // ── Page Range Dialog مصلح وموحد بالكامل لصفحة الملخص ─────────────────
   Future<void> _showPageRangeDialog() async {
     int fromPage = _selectedFromPage ?? 1;
     int toPage = _selectedToPage ?? (_totalPages > 0 ? _totalPages : 1);
 
-    // تهيئة النص داخل الـ Controllers بالقيمة الحالية قبل فتح الديالوج مباشرة
     _fromController.text = '$fromPage';
     _toController.text = '$toPage';
 
@@ -161,8 +291,6 @@ class _SummaryPageState extends State<SummaryPage>
                   ),
                 ),
                 const SizedBox(height: 24),
-
-                // ── من الصفحة ──
                 Text(
                   isArabic ? 'من الصفحة' : 'From Page',
                   style: const TextStyle(
@@ -174,7 +302,7 @@ class _SummaryPageState extends State<SummaryPage>
                 _buildPageCounter(
                   value: fromPage,
                   min: 1,
-                  max: toPage, // حماية السهم العلوي
+                  max: toPage,
                   controller: _fromController,
                   onChanged: (val) => fromPage = val,
                   onDecrement: () => setStateDialog(() {
@@ -190,10 +318,7 @@ class _SummaryPageState extends State<SummaryPage>
                     }
                   }),
                 ),
-
                 const SizedBox(height: 20),
-
-                // ── إلى الصفحة ──
                 Text(
                   isArabic ? 'إلى الصفحة' : 'To Page',
                   style: const TextStyle(
@@ -204,7 +329,7 @@ class _SummaryPageState extends State<SummaryPage>
                 const SizedBox(height: 8),
                 _buildPageCounter(
                   value: toPage,
-                  min: fromPage, // حماية السهم السفلي
+                  min: fromPage,
                   max: _totalPages > 0 ? _totalPages : 9999,
                   controller: _toController,
                   onChanged: (val) => toPage = val,
@@ -241,7 +366,6 @@ class _SummaryPageState extends State<SummaryPage>
                   ),
                 ),
                 onPressed: () {
-                  // 🚨 الفحص النهائي الذكي للمدخلات اليدوية من الكيبورد
                   int finalFrom =
                       int.tryParse(_fromController.text) ?? fromPage;
                   int finalTo = int.tryParse(_toController.text) ?? toPage;
@@ -256,7 +380,6 @@ class _SummaryPageState extends State<SummaryPage>
                     );
                     return;
                   }
-
                   if (finalTo < finalFrom ||
                       (_totalPages > 0 && finalTo > _totalPages)) {
                     _showInfoSnackBar(
@@ -267,7 +390,6 @@ class _SummaryPageState extends State<SummaryPage>
                     );
                     return;
                   }
-
                   Navigator.pop(context, {'from': finalFrom, 'to': finalTo});
                 },
                 child: Text(isArabic ? 'توليد' : 'Generate'),
@@ -283,11 +405,10 @@ class _SummaryPageState extends State<SummaryPage>
         _selectedFromPage = result['from'];
         _selectedToPage = result['to'];
       });
-      await _generateSummary(); // استدعاء دالة توليد الملخص الخاصة بهذه الصفحة
+      await _generateSummary();
     }
   }
 
-  // ── Helper Widget لمعداد الصفحات الجذاب (مطابق تماماً لشكل صفحة الأسئلة) ──────────────────────────────
   Widget _buildPageCounter({
     required int value,
     required int min,
@@ -300,18 +421,15 @@ class _SummaryPageState extends State<SummaryPage>
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        // زر الناقص (-) بحجم كبير وأنيق
         IconButton(
           onPressed: value > min ? onDecrement : null,
           icon: const Icon(Icons.remove_circle_outline_rounded),
           color: const Color(0xFF6366F1),
-          iconSize: 28, // نفس الحجم المتناسق في صفحة الأسئلة
+          iconSize: 28,
         ),
         const SizedBox(width: 8),
-
-        // الحاوية المتدرجة (Gradient) وبداخلها حقل إدخال النص الشفاف
         Container(
-          width: 70, // نفس العرض المحدد في صفحة الأسئلة
+          width: 70,
           padding: const EdgeInsets.symmetric(vertical: 4),
           decoration: BoxDecoration(
             gradient: const LinearGradient(
@@ -329,13 +447,15 @@ class _SummaryPageState extends State<SummaryPage>
           child: TextField(
             controller: controller,
             keyboardType: TextInputType.number,
-            textAlign: TextAlign.center,
+            textAlign: DateTime.now().year == 2026
+                ? TextAlign.center
+                : TextAlign.start,
             cursorColor: Colors.white,
             inputFormatters: [FilteringTextInputFormatter.digitsOnly],
             style: const TextStyle(
               color: Colors.white,
               fontWeight: FontWeight.bold,
-              fontSize: 20, // رقم واضح وبارز باللون الأبيض
+              fontSize: 20,
             ),
             decoration: const InputDecoration(
               border: InputBorder.none,
@@ -345,15 +465,11 @@ class _SummaryPageState extends State<SummaryPage>
             onChanged: (text) {
               if (text.isEmpty) return;
               int? parsed = int.tryParse(text);
-              if (parsed != null) {
-                onChanged(parsed); // تحديث القيمة في الخلفية
-              }
+              if (parsed != null) onChanged(parsed);
             },
           ),
         ),
         const SizedBox(width: 8),
-
-        // زر الزائد (+) بحجم كبير وأنيق
         IconButton(
           onPressed: (_totalPages == 0 || value < max) ? onIncrement : null,
           icon: const Icon(Icons.add_circle_outline_rounded),
@@ -365,8 +481,9 @@ class _SummaryPageState extends State<SummaryPage>
   }
 
   // ── Generate ──────────────────────────────────────────────
+  // ── دالة توليد الملخص الذكي المحمية بالـ CancelToken ──
   Future<void> _generateSummary() async {
-    if (widget.fileId == null) {
+    if (_activeFileId == null) {
       _showInfoSnackBar(
         isArabic ? 'لم يتم اختيار ملف' : 'No file selected',
         Colors.red,
@@ -377,9 +494,11 @@ class _SummaryPageState extends State<SummaryPage>
     setState(() => _isGenerating = true);
 
     try {
-      final apiService = ApiService();
-      final response = await apiService.dio.post(
-        '/files/${widget.fileId}/summarize',
+      _cancelToken = CancelToken();
+
+      final response = await _apiService.dio.post(
+        '/files/$_activeFileId/summarize',
+        cancelToken: _cancelToken,
         data: {
           if (_selectedFromPage != null) 'from_page': _selectedFromPage,
           if (_selectedToPage != null) 'to_page': _selectedToPage,
@@ -392,10 +511,10 @@ class _SummaryPageState extends State<SummaryPage>
           _summaryResult = summaryText;
           _isGenerating = false;
         });
-        if (widget.fileId != null) {
+        if (_activeFileId != null) {
           await HistoryStore.add({
-            'file_id': widget.fileId,
-            'file_name': widget.fileName ?? '',
+            'file_id': _activeFileId,
+            'file_name': _activeFileName ?? '',
             'type': 'summary',
             'data': summaryText,
             'from_page': _selectedFromPage,
@@ -415,17 +534,27 @@ class _SummaryPageState extends State<SummaryPage>
           Colors.red,
         );
       }
-    } on DioException {
+    } on DioException catch (e) {
+      // ← تم دمج الـ Blocks وتصفية التكرار هنا
+      if (!mounted) return;
       setState(() => _isGenerating = false);
+
+      // لو المستخدم لغى بنفسه، اخرج بنظافة وماتظهرش SnackBar حمراء تبوظ الـ UX
+      if (CancelToken.isCancel(e)) {
+        debugPrint('Summary request cancelled cleanly.');
+        return;
+      }
+
       _showInfoSnackBar(
         isArabic ? 'فشل الاتصال بالسيرفر' : 'Failed to connect to server',
-        Colors.red,
+        Colors.red, // ← تم إدخال اللون الثاني هنا لتصليح الإيرور
       );
     } catch (e) {
+      if (!mounted) return;
       setState(() => _isGenerating = false);
       _showInfoSnackBar(
         isArabic ? 'حدث خطأ غير متوقع' : 'Unexpected error occurred',
-        Colors.red,
+        Colors.red, // ← تم إدخال اللون الثاني هنا لتصليح الإيرور برضه
       );
     }
   }
@@ -451,7 +580,7 @@ class _SummaryPageState extends State<SummaryPage>
                 height: 4,
                 decoration: BoxDecoration(
                   color: Colors.grey.shade300,
-                  borderRadius: BorderRadius.circular(2),
+                  borderRadius: BorderRadius.circular(22),
                 ),
               ),
             ),
@@ -492,7 +621,6 @@ class _SummaryPageState extends State<SummaryPage>
               ),
             ),
             const SizedBox(height: 24),
-
             _ExportOptionTile(
               icon: Icons.picture_as_pdf_rounded,
               color: const Color(0xFFEF4444),
@@ -505,13 +633,12 @@ class _SummaryPageState extends State<SummaryPage>
                 PdfExporter.exportSummary(
                   context: context,
                   summary: _summaryResult ?? '',
-                  fileName: widget.fileName ?? 'Summary',
+                  fileName: _activeFileName ?? 'Summary',
                   isArabic: isArabic,
                 );
               },
             ),
             const SizedBox(height: 12),
-
             _ExportOptionTile(
               icon: Icons.article_rounded,
               color: const Color(0xFF2563EB),
@@ -524,7 +651,7 @@ class _SummaryPageState extends State<SummaryPage>
                 WordExporter.exportSummary(
                   context: context,
                   summary: _summaryResult ?? '',
-                  fileName: widget.fileName ?? 'Summary',
+                  fileName: _activeFileName ?? 'Summary',
                   isArabic: isArabic,
                 );
               },
@@ -536,7 +663,6 @@ class _SummaryPageState extends State<SummaryPage>
     );
   }
 
-  // ── Snack bars ────────────────────────────────────────────
   void _showSuccessSnackBar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -587,7 +713,6 @@ class _SummaryPageState extends State<SummaryPage>
     }
   }
 
-  // ── Markdown style ────────────────────────────────────────
   MarkdownStyleSheet _buildMarkdownStyle(ThemeData theme) {
     const baseColor = Color(0xFF6366F1);
     return MarkdownStyleSheet(
@@ -660,7 +785,7 @@ class _SummaryPageState extends State<SummaryPage>
         color: baseColor.withOpacity(0.04),
         borderRadius: const BorderRadius.only(
           topRight: Radius.circular(8),
-          bottomRight: Radius.circular(8),
+          bottomLeft: Radius.circular(8),
         ),
       ),
       blockquotePadding: const EdgeInsets.symmetric(
@@ -675,497 +800,542 @@ class _SummaryPageState extends State<SummaryPage>
     );
   }
 
-  // ── Build ─────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
     return CallbackShortcuts(
       bindings: {
-        const SingleActivator(LogicalKeyboardKey.escape): () {
-          if (Navigator.canPop(context)) Navigator.pop(context);
+        const SingleActivator(LogicalKeyboardKey.escape): () async {
+          final shouldPop = await _onWillPop();
+          if (shouldPop && context.mounted) {
+            if (Navigator.canPop(context)) Navigator.pop(context);
+          }
         },
       },
       child: Focus(
         autofocus: true,
-        child: Scaffold(
-          backgroundColor: theme.scaffoldBackgroundColor,
-          appBar: AppBar(
-            title: Text(
-              isArabic ? 'ملخص' : 'Summary',
-              style: const TextStyle(fontWeight: FontWeight.w600),
-            ),
-            elevation: 0,
-            backgroundColor: theme.cardColor,
-            actions: [
-              if (widget.fileId != null)
-                IconButton(
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => ChatPage(
-                          fileName: widget.fileName ?? '',
-                          fileId: widget.fileId ?? '',
-                        ),
-                      ),
-                    );
-                  },
-                  icon: const Icon(Icons.lightbulb_rounded),
-                  color: const Color(0xFFFBBF24),
-                  tooltip: isArabic ? 'الشات الذكي' : 'Smart Chat',
-                ),
-              if (_summaryResult != null)
-                IconButton(
-                  onPressed: _showExportSheet,
-                  icon: const Icon(Icons.ios_share_rounded),
-                  color: const Color(0xFF6366F1),
-                  tooltip: isArabic ? 'تصدير' : 'Export',
-                ),
-            ],
-          ),
-          body: Center(
-            child: ConstrainedBox(
-              constraints: BoxConstraints(
-                maxWidth: Responsive.maxWidth(context),
+        child: PopScope(
+          canPop: !_isGenerating,
+          onPopInvokedWithResult: (didPop, result) async {
+            if (didPop) return;
+            final shouldPop = await _onWillPop();
+            if (shouldPop && context.mounted) {
+              Navigator.pop(context);
+            }
+          },
+          child: Scaffold(
+            backgroundColor: theme.scaffoldBackgroundColor,
+            appBar: AppBar(
+              title: Text(
+                isArabic ? 'ملخص' : 'Summary',
+                style: const TextStyle(fontWeight: FontWeight.w600),
               ),
-              child: SingleChildScrollView(
-                physics: const BouncingScrollPhysics(),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // ── Header card ──────────────────────────────────────────────
-                    FadeTransition(
-                      opacity: _fadeAnimation,
-                      child: Container(
-                        width: double.infinity,
-                        decoration: BoxDecoration(
-                          color: theme.cardColor,
-                          borderRadius: const BorderRadius.only(
-                            bottomLeft: Radius.circular(32),
-                            bottomRight: Radius.circular(32),
+              elevation: 0,
+              backgroundColor: theme.cardColor,
+              actions: [
+                if (_activeFileId != null)
+                  IconButton(
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => ChatPage(
+                            fileName: _activeFileName ?? '',
+                            fileId: _activeFileId ?? '',
                           ),
                         ),
-                        padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.all(10),
-                                  decoration: BoxDecoration(
-                                    gradient: const LinearGradient(
-                                      colors: [
-                                        Color(0xFF6366F1),
-                                        Color(0xFF8B5CF6),
-                                      ],
-                                    ),
-                                    borderRadius: BorderRadius.circular(16),
-                                  ),
-                                  child: const Icon(
-                                    Icons.auto_awesome_rounded,
-                                    color: Colors.white,
-                                    size: 24,
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        isArabic ? 'ملخص ذكي' : 'Smart Summary',
-                                        style:
-                                            (theme.textTheme.headlineMedium ??
-                                                    const TextStyle())
-                                                .copyWith(
-                                                  fontWeight: FontWeight.bold,
-                                                  letterSpacing: -0.5,
-                                                  color: const Color(
-                                                    0xFF6366F1,
-                                                  ),
-                                                ),
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        isArabic
-                                            ? 'احصل على ملخص دقيق لمستنداتك'
-                                            : 'Get accurate summaries of your documents',
-                                        style: theme.textTheme.bodyMedium
-                                            ?.copyWith(color: Colors.grey[600]),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
+                      );
+                    },
+                    icon: const Icon(Icons.lightbulb_rounded),
+                    color: const Color(0xFFFBBF24),
+                    tooltip: isArabic ? 'الشات الذكي' : 'Smart Chat',
+                  ),
+                if (_summaryResult != null)
+                  IconButton(
+                    onPressed: _showExportSheet,
+                    icon: const Icon(Icons.ios_share_rounded),
+                    color: const Color(0xFF6366F1),
+                    tooltip: isArabic ? 'تصدير' : 'Export',
+                  ),
+              ],
+            ),
+            body: Center(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: Responsive.maxWidth(context),
+                ),
+                child: SingleChildScrollView(
+                  physics: const BouncingScrollPhysics(),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // ── Header card ──────────────────────────────────────────────
+                      FadeTransition(
+                        opacity: _fadeAnimation,
+                        child: Container(
+                          width: double.infinity,
+                          decoration: BoxDecoration(
+                            color: theme.cardColor,
+                            borderRadius: const BorderRadius.only(
+                              bottomLeft: Radius.circular(32),
+                              bottomRight: Radius.circular(32),
                             ),
-                            const SizedBox(height: 20),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 12,
-                              ),
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  colors: [
-                                    const Color(0xFF6366F1).withOpacity(0.1),
-                                    const Color(0xFF8B5CF6).withOpacity(0.05),
-                                  ],
-                                ),
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(
-                                  color: const Color(
-                                    0xFF6366F1,
-                                  ).withOpacity(0.2),
-                                ),
-                              ),
-                              child: Row(
+                          ),
+                          padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
                                 children: [
                                   Container(
-                                    padding: const EdgeInsets.all(8),
+                                    padding: const EdgeInsets.all(10),
                                     decoration: BoxDecoration(
-                                      color: const Color(
-                                        0xFF6366F1,
-                                      ).withOpacity(0.2),
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    child: const Icon(
-                                      Icons.description_rounded,
-                                      color: Color(0xFF6366F1),
-                                      size: 20,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Text(
-                                      widget.fileName ??
-                                          (isArabic
-                                              ? 'لم يتم اختيار ملف'
-                                              : 'No file selected'),
-                                      style: theme.textTheme.bodyMedium
-                                          ?.copyWith(
-                                            fontWeight: FontWeight.w500,
-                                            letterSpacing: -0.3,
-                                          ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-
-                    const SizedBox(height: 12),
-
-                    // ── Generate button ───────────────────────────────────────────
-                    SlideTransition(
-                      position: _slideAnimation,
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: theme.cardColor,
-                          borderRadius: BorderRadius.circular(24),
-                        ),
-                        margin: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 8,
-                        ),
-                        padding: const EdgeInsets.all(20),
-                        child: InteractiveScale(
-                          onTap: _isGenerating
-                              ? null
-                              : () async {
-                                  await _showPageRangeDialog();
-                                },
-                          child: SizedBox(
-                            width: double.infinity,
-                            child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 300),
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                              decoration: BoxDecoration(
-                                gradient: _isGenerating
-                                    ? LinearGradient(
-                                        colors: [
-                                          Colors.grey.shade400,
-                                          Colors.grey.shade500,
-                                        ],
-                                      )
-                                    : const LinearGradient(
-                                        begin: Alignment.topLeft,
-                                        end: Alignment.bottomRight,
+                                      gradient: const LinearGradient(
                                         colors: [
                                           Color(0xFF6366F1),
                                           Color(0xFF8B5CF6),
                                         ],
                                       ),
-                                borderRadius: BorderRadius.circular(20),
-                                boxShadow: _isGenerating
-                                    ? []
-                                    : [
-                                        BoxShadow(
-                                          color: const Color(
-                                            0xFF6366F1,
-                                          ).withOpacity(0.4),
-                                          blurRadius: 20,
-                                          offset: const Offset(0, 8),
-                                        ),
-                                      ],
-                              ),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  if (_isGenerating)
-                                    const SizedBox(
-                                      width: 22,
-                                      height: 22,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2.5,
-                                        valueColor: AlwaysStoppedAnimation(
-                                          Colors.white,
-                                        ),
-                                      ),
-                                    )
-                                  else
-                                    const Icon(
+                                      borderRadius: BorderRadius.circular(16),
+                                    ),
+                                    child: const Icon(
                                       Icons.auto_awesome_rounded,
                                       color: Colors.white,
-                                      size: 22,
+                                      size: 24,
                                     ),
-                                  const SizedBox(width: 10),
-                                  Text(
-                                    _isGenerating
-                                        ? (isArabic
-                                              ? 'جاري إنشاء الملخص...'
-                                              : 'Generating Summary...')
-                                        : (_summaryResult == null
-                                              ? (isArabic
-                                                    ? 'إنشاء الملخص'
-                                                    : 'Generate Summary')
-                                              : (isArabic
-                                                    ? 'إعادة إنشاء الملخص'
-                                                    : 'Regenerate Summary')),
-                                    style: const TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w600,
-                                      color: Colors.white,
-                                      letterSpacing: -0.3,
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          isArabic
+                                              ? 'ملخص ذكي'
+                                              : 'Smart Summary',
+                                          style:
+                                              (theme.textTheme.headlineMedium ??
+                                                      const TextStyle())
+                                                  .copyWith(
+                                                    fontWeight: FontWeight.bold,
+                                                    letterSpacing: -0.5,
+                                                    color: const Color(
+                                                      0xFF6366F1,
+                                                    ),
+                                                  ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          isArabic
+                                              ? 'احصل على ملخص دقيق لمستنداتك'
+                                              : 'Get accurate summaries of your documents',
+                                          style: theme.textTheme.bodyMedium
+                                              ?.copyWith(
+                                                color: Colors.grey[600],
+                                              ),
+                                        ),
+                                      ],
                                     ),
                                   ),
                                 ],
                               ),
-                            ),
+                              const SizedBox(height: 20),
+                              GestureDetector(
+                                onTap: _changeActiveFile,
+                                child: MouseRegion(
+                                  cursor: _isGenerating
+                                      ? SystemMouseCursors.basic
+                                      : SystemMouseCursors.click,
+                                  child: AnimatedContainer(
+                                    duration: const Duration(milliseconds: 200),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 12,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      gradient: LinearGradient(
+                                        colors: [
+                                          const Color(
+                                            0xFF6366F1,
+                                          ).withOpacity(0.12),
+                                          const Color(
+                                            0xFF8B5CF6,
+                                          ).withOpacity(0.06),
+                                        ],
+                                      ),
+                                      borderRadius: BorderRadius.circular(16),
+                                      border: Border.all(
+                                        color: const Color(
+                                          0xFF6366F1,
+                                        ).withOpacity(0.35),
+                                        width: 1.2,
+                                      ),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.all(8),
+                                          decoration: BoxDecoration(
+                                            color: const Color(
+                                              0xFF6366F1,
+                                            ).withOpacity(0.2),
+                                            borderRadius: BorderRadius.circular(
+                                              12,
+                                            ),
+                                          ),
+                                          child: const Icon(
+                                            Icons.description_rounded,
+                                            color: Color(0xFF6366F1),
+                                            size: 20,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Text(
+                                            _activeFileName ??
+                                                (isArabic
+                                                    ? 'لم يتم اختيار ملف'
+                                                    : 'No file selected'),
+                                            style: theme.textTheme.bodyMedium
+                                                ?.copyWith(
+                                                  fontWeight: FontWeight.bold,
+                                                  letterSpacing: -0.3,
+                                                ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                        Icon(
+                                          Icons.swap_horizontal_circle_outlined,
+                                          color: const Color(
+                                            0xFF6366F1,
+                                          ).withOpacity(0.7),
+                                          size: 22,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ),
-                    ),
+                      const SizedBox(height: 12),
 
-                    const SizedBox(height: 12),
-
-                    // ── Summary result card ───────────────────────────────────────
-                    SlideTransition(
-                      position:
-                          Tween<Offset>(
-                            begin: const Offset(0, 0.25),
-                            end: Offset.zero,
-                          ).animate(
-                            CurvedAnimation(
-                              parent: _animationController,
-                              curve: Curves.easeOutCubic,
-                            ),
+                      // ── Generate button ───────────────────────────────────────────
+                      SlideTransition(
+                        position: _slideAnimation,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: theme.cardColor,
+                            borderRadius: BorderRadius.circular(24),
                           ),
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: theme.cardColor,
-                          borderRadius: BorderRadius.circular(24),
-                        ),
-                        margin: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 8,
-                        ),
-                        padding: const EdgeInsets.all(24),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.all(8),
-                                  decoration: BoxDecoration(
-                                    gradient: const LinearGradient(
-                                      colors: [
-                                        Color(0xFF10B981),
-                                        Color(0xFF34D399),
-                                      ],
-                                    ),
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: const Icon(
-                                    Icons.summarize_rounded,
-                                    color: Colors.white,
-                                    size: 20,
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Text(
-                                  isArabic ? 'نتيجة الملخص' : 'Summary Result',
-                                  style: theme.textTheme.titleLarge?.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                    letterSpacing: -0.5,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 20),
-                            AnimatedContainer(
-                              duration: const Duration(milliseconds: 400),
+                          margin: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 8,
+                          ),
+                          padding: const EdgeInsets.all(20),
+                          child: InteractiveScale(
+                            onTap: _isGenerating
+                                ? null
+                                : () async => await _showPageRangeDialog(),
+                            child: SizedBox(
                               width: double.infinity,
-                              constraints: const BoxConstraints(minHeight: 250),
-                              padding: const EdgeInsets.all(20),
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  colors: [
-                                    theme.scaffoldBackgroundColor,
-                                    theme.scaffoldBackgroundColor.withOpacity(
-                                      0.8,
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 300),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 16,
+                                ),
+                                decoration: BoxDecoration(
+                                  gradient: _isGenerating
+                                      ? LinearGradient(
+                                          colors: [
+                                            Colors.grey.shade400,
+                                            Colors.grey.shade500,
+                                          ],
+                                        )
+                                      : const LinearGradient(
+                                          begin: Alignment.topLeft,
+                                          end: Alignment.bottomRight,
+                                          colors: [
+                                            Color(0xFF6366F1),
+                                            Color(0xFF8B5CF6),
+                                          ],
+                                        ),
+                                  borderRadius: BorderRadius.circular(20),
+                                  boxShadow: _isGenerating
+                                      ? []
+                                      : [
+                                          BoxShadow(
+                                            color: const Color(
+                                              0xFF6366F1,
+                                            ).withOpacity(0.4),
+                                            blurRadius: 20,
+                                            offset: const Offset(0, 8),
+                                          ),
+                                        ],
+                                ),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    if (_isGenerating)
+                                      const SizedBox(
+                                        width: 22,
+                                        height: 22,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2.5,
+                                          valueColor: AlwaysStoppedAnimation(
+                                            Colors.white,
+                                          ),
+                                        ),
+                                      )
+                                    else
+                                      const Icon(
+                                        Icons.auto_awesome_rounded,
+                                        color: Colors.white,
+                                        size: 22,
+                                      ),
+                                    const SizedBox(width: 10),
+                                    Text(
+                                      _isGenerating
+                                          ? (isArabic
+                                                ? 'جاري إنشاء الملخص...'
+                                                : 'Generating Summary...')
+                                          : (_summaryResult == null
+                                                ? (isArabic
+                                                      ? 'إنشاء الملخص'
+                                                      : 'Generate Summary')
+                                                : (isArabic
+                                                      ? 'إعادة إنشاء الملخص'
+                                                      : 'Regenerate Summary')),
+                                      style: const TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.white,
+                                        letterSpacing: -0.3,
+                                      ),
                                     ),
                                   ],
                                 ),
-                                borderRadius: BorderRadius.circular(20),
-                                border: Border.all(
-                                  color: const Color(
-                                    0xFF6366F1,
-                                  ).withOpacity(0.2),
-                                ),
                               ),
-                              child: _isGenerating
-                                  ? Center(
-                                      child: Column(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.center,
-                                        children: [
-                                          const SizedBox(
-                                            width: 50,
-                                            height: 50,
-                                            child: CircularProgressIndicator(
-                                              strokeWidth: 3,
-                                              valueColor:
-                                                  AlwaysStoppedAnimation(
-                                                    Color(0xFF6366F1),
-                                                  ),
-                                            ),
-                                          ),
-                                          const SizedBox(height: 20),
-                                          Text(
-                                            isArabic
-                                                ? 'جاري إنشاء الملخص...'
-                                                : 'Generating your summary...',
-                                            style: theme.textTheme.bodyMedium
-                                                ?.copyWith(
-                                                  color: Colors.grey[600],
-                                                ),
-                                          ),
-                                        ],
-                                      ),
-                                    )
-                                  : _summaryResult == null
-                                  ? Center(
-                                      child: Column(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.center,
-                                        children: [
-                                          Icon(
-                                            Icons.auto_awesome_outlined,
-                                            size: 70,
-                                            color: Colors.grey[400],
-                                          ),
-                                          const SizedBox(height: 16),
-                                          Text(
-                                            isArabic
-                                                ? 'انقر على "إنشاء الملخص" للبدء'
-                                                : 'Click "Generate Summary" to start',
-                                            style: theme.textTheme.titleMedium
-                                                ?.copyWith(
-                                                  color: Colors.grey[500],
-                                                  fontWeight: FontWeight.w500,
-                                                ),
-                                          ),
-                                          const SizedBox(height: 8),
-                                          Text(
-                                            isArabic
-                                                ? 'سيتم عرض الملخص الذكي هنا'
-                                                : 'Your smart summary will appear here',
-                                            style: theme.textTheme.bodyMedium
-                                                ?.copyWith(
-                                                  color: Colors.grey[400],
-                                                ),
-                                          ),
-                                        ],
-                                      ),
-                                    )
-                                  : Stack(
-                                      children: [
-                                        Padding(
-                                          padding: const EdgeInsets.only(
-                                            top: 36,
-                                          ),
-                                          child: Directionality(
-                                            textDirection: TextDirection.rtl,
-                                            child: MathMarkdown(
-                                              data: _summaryResult!,
-                                              styleSheet: _buildMarkdownStyle(
-                                                theme,
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                        Positioned(
-                                          top: 0,
-                                          right: 0,
-                                          child: Tooltip(
-                                            message: isArabic ? 'نسخ' : 'Copy',
-                                            child: InkWell(
-                                              onTap: _copyToClipboard,
-                                              borderRadius:
-                                                  BorderRadius.circular(10),
-                                              child: Container(
-                                                padding: const EdgeInsets.all(
-                                                  7,
-                                                ),
-                                                decoration: BoxDecoration(
-                                                  color: const Color(
-                                                    0xFF6366F1,
-                                                  ).withOpacity(0.1),
-                                                  borderRadius:
-                                                      BorderRadius.circular(10),
-                                                  border: Border.all(
-                                                    color: const Color(
-                                                      0xFF6366F1,
-                                                    ).withOpacity(0.25),
-                                                  ),
-                                                ),
-                                                child: const Icon(
-                                                  Icons.copy_rounded,
-                                                  size: 16,
-                                                  color: Color(0xFF6366F1),
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
                             ),
-                          ],
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 16),
-                  ],
+                      const SizedBox(height: 12),
+
+                      // ── Summary result card ───────────────────────────────────────
+                      SlideTransition(
+                        position:
+                            Tween<Offset>(
+                              begin: const Offset(0, 0.25),
+                              end: Offset.zero,
+                            ).animate(
+                              CurvedAnimation(
+                                parent: _animationController,
+                                curve: Curves.easeOutCubic,
+                              ),
+                            ),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: theme.cardColor,
+                            borderRadius: BorderRadius.circular(24),
+                          ),
+                          margin: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 8,
+                          ),
+                          padding: const EdgeInsets.all(24),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(8),
+                                    decoration: BoxDecoration(
+                                      gradient: const LinearGradient(
+                                        colors: [
+                                          Color(0xFF10B981),
+                                          Color(0xFF34D399),
+                                        ],
+                                      ),
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: const Icon(
+                                      Icons.summarize_rounded,
+                                      color: Colors.white,
+                                      size: 20,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Text(
+                                    isArabic
+                                        ? 'نتيجة الملخص'
+                                        : 'Summary Result',
+                                    style: theme.textTheme.titleLarge?.copyWith(
+                                      fontWeight: FontWeight.bold,
+                                      letterSpacing: -0.5,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 20),
+                              AnimatedContainer(
+                                duration: const Duration(milliseconds: 400),
+                                width: double.infinity,
+                                constraints: const BoxConstraints(
+                                  minHeight: 250,
+                                ),
+                                padding: const EdgeInsets.all(20),
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    colors: [
+                                      theme.scaffoldBackgroundColor,
+                                      theme.scaffoldBackgroundColor.withOpacity(
+                                        0.8,
+                                      ),
+                                    ],
+                                  ),
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(
+                                    color: const Color(
+                                      0xFF6366F1,
+                                    ).withOpacity(0.2),
+                                  ),
+                                ),
+                                child: _isGenerating
+                                    ? Center(
+                                        child: Column(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          children: [
+                                            const SizedBox(
+                                              width: 50,
+                                              height: 50,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 3,
+                                                valueColor:
+                                                    AlwaysStoppedAnimation(
+                                                      Color(0xFF6366F1),
+                                                    ),
+                                              ),
+                                            ),
+                                            const SizedBox(height: 20),
+                                            Text(
+                                              isArabic
+                                                  ? 'جاري إنشاء الملخص...'
+                                                  : 'Generating your summary...',
+                                              style: theme.textTheme.bodyMedium
+                                                  ?.copyWith(
+                                                    color: Colors.grey[600],
+                                                  ),
+                                            ),
+                                          ],
+                                        ),
+                                      )
+                                    : _summaryResult == null
+                                    ? Center(
+                                        child: Column(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          children: [
+                                            Icon(
+                                              Icons.auto_awesome_outlined,
+                                              size: 70,
+                                              color: Colors.grey[400],
+                                            ),
+                                            const SizedBox(height: 16),
+                                            Text(
+                                              isArabic
+                                                  ? 'انقر على "إنشاء الملخص" للبدء'
+                                                  : 'Click "Generate Summary" to start',
+                                              style: theme.textTheme.titleMedium
+                                                  ?.copyWith(
+                                                    color: Colors.grey[500],
+                                                    fontWeight: FontWeight.w500,
+                                                  ),
+                                            ),
+                                            const SizedBox(height: 8),
+                                            Text(
+                                              isArabic
+                                                  ? 'سيتم عرض الملخص الذكي هنا'
+                                                  : 'Your smart summary will appear here',
+                                              style: theme.textTheme.bodyMedium
+                                                  ?.copyWith(
+                                                    color: Colors.grey[400],
+                                                  ),
+                                            ),
+                                          ],
+                                        ),
+                                      )
+                                    : Stack(
+                                        children: [
+                                          Padding(
+                                            padding: const EdgeInsets.only(
+                                              top: 36,
+                                            ),
+                                            child: Directionality(
+                                              textDirection: TextDirection.rtl,
+                                              child: MathMarkdown(
+                                                data: _summaryResult!,
+                                                styleSheet: _buildMarkdownStyle(
+                                                  theme,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                          Positioned(
+                                            top: 0,
+                                            right: 0,
+                                            child: Tooltip(
+                                              message: isArabic
+                                                  ? 'نسخ'
+                                                  : 'Copy',
+                                              child: InkWell(
+                                                onTap: _copyToClipboard,
+                                                borderRadius:
+                                                    BorderRadius.circular(10),
+                                                child: Container(
+                                                  padding: const EdgeInsets.all(
+                                                    7,
+                                                  ),
+                                                  decoration: BoxDecoration(
+                                                    color: const Color(
+                                                      0xFF6366F1,
+                                                    ).withOpacity(0.1),
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          10,
+                                                        ),
+                                                    border: Border.all(
+                                                      color: const Color(
+                                                        0xFF6366F1,
+                                                      ).withOpacity(0.25),
+                                                    ),
+                                                  ),
+                                                  child: const Icon(
+                                                    Icons.copy_rounded,
+                                                    size: 16,
+                                                    color: Color(0xFF6366F1),
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -1176,9 +1346,6 @@ class _SummaryPageState extends State<SummaryPage>
   }
 }
 
-// ─────────────────────────────────────────────────────────────
-//  Export option tile
-// ─────────────────────────────────────────────────────────────
 class _ExportOptionTile extends StatelessWidget {
   final IconData icon;
   final Color color;

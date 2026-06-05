@@ -14,7 +14,7 @@ import 'package:project_flutter/services/auth_service.dart';
 import 'package:project_flutter/services/files_service.dart';
 import 'explanation_page.dart';
 import 'mindmap_page.dart';
-import 'summary_page.dart';
+import 'package:project_flutter/pages/summary_page.dart';
 import 'splash_screen.dart';
 import 'questions_page.dart';
 import 'personal_page.dart';
@@ -137,7 +137,6 @@ class _HomePageState extends State<HomePage>
 
   ImageProvider? _getUserAvatar() {
     if (_user == null) return null;
-
     if (_user!['avatarBytes'] != null) {
       try {
         Uint8List bytes = base64Decode(_user!['avatarBytes']);
@@ -146,11 +145,9 @@ class _HomePageState extends State<HomePage>
         debugPrint('Error decoding avatar: $e');
       }
     }
-
     if (_user!['avatar'] != null && _user!['avatar'].toString().isNotEmpty) {
       return NetworkImage(_user!['avatar']);
     }
-
     return null;
   }
 
@@ -172,9 +169,7 @@ class _HomePageState extends State<HomePage>
 
   Future<void> _loadUserData() async {
     setState(() => _isLoading = true);
-
     final localUser = await _authService.getCurrentUserFromStorage();
-
     if (localUser != null) {
       setState(() {
         _user = localUser;
@@ -202,14 +197,12 @@ class _HomePageState extends State<HomePage>
         type: PageTransitionType.slideFromRight,
       ),
     );
-
     if (result != null && result is Map && result['updated'] == true) {
       final updatedUserData = result['userData'];
       if (updatedUserData != null) {
         setState(() {
           _user = updatedUserData;
         });
-
         if (_user!['avatarBytes'] != null) {
           try {
             final bytes = base64Decode(_user!['avatarBytes']);
@@ -265,7 +258,6 @@ class _HomePageState extends State<HomePage>
         isDestructive: true,
       ),
     );
-
     if (confirm == true) {
       await _authService.logout();
       if (mounted) {
@@ -282,60 +274,49 @@ class _HomePageState extends State<HomePage>
 
   Future<void> _pickPDF() async {
     if (_isUploading) return;
-
-    try {
-      FilePickerResult? result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['pdf'],
-        allowMultiple: false,
-        withData: true,
-      );
-
-      if (result == null) return;
-
-      final pickedFile = result.files.single;
-      final bytes = pickedFile.bytes;
-      final fileName = pickedFile.name;
-
-      if (bytes == null) return;
-
-      setState(() => _isUploading = true);
-
-      final uploadedFile = await _filesService.uploadFileBytes(
-        bytes,
-        fileName: fileName,
-        type: 'PDF',
-      );
-
-      if (uploadedFile != null) {
-        setState(() {
-          _selectedFileName = fileName;
-          _selectedFileId = uploadedFile['id']?.toString();
-          _selectedPageCount = (uploadedFile['page_count'] ?? 0) as int;
-          _isFileProcessing = uploadedFile['has_text'] == false;
-          _isUploading = false;
-        });
-
-        if (mounted) {
+    await showDialog(
+      context: context,
+      builder: (context) => FilePickerDialog(
+        filesService: _filesService,
+        isArabic: isArabic,
+        currentFileId: _selectedFileId,
+        onFileSelected: (fileId, fileName, pageCount) {
+          setState(() {
+            _selectedFileId = fileId;
+            _selectedFileName = fileName;
+            _selectedPageCount = pageCount;
+            _isFileProcessing = false;
+          });
+        },
+        onFileUploaded: (fileId, fileName, pageCount, isProcessing) {
+          // تحديث الواجهة فقط في حالة اختيار الفتح الفوري
+          setState(() {
+            _selectedFileId = fileId;
+            _selectedFileName = fileName;
+            _selectedPageCount = pageCount;
+            _isFileProcessing = isProcessing;
+            _isUploading = false;
+          });
           _showSuccessSnackBar(
-            '$fileName ${isArabic ? 'تم رفعه بنجاح' : 'uploaded successfully'}',
+            '$fileName ${isArabic ? 'تم رفعه وفتحه بنجاح' : 'uploaded and opened successfully'}',
           );
-        }
-      } else {
-        setState(() => _isUploading = false);
-        if (mounted) {
-          _showErrorSnackBar(
-            isArabic ? 'فشل رفع الملف' : 'Failed to upload file',
-          );
-        }
-      }
-    } catch (e) {
-      debugPrint('Error picking file: $e');
-      if (mounted) {
-        setState(() => _isUploading = false);
-        _showErrorSnackBar('Error: $e');
-      }
-    }
+        },
+        onUploadStart: () => setState(() => _isUploading = true),
+        onError: (msg) {
+          setState(() => _isUploading = false);
+
+          // التحقق مما إذا كانت الرسالة القادمة هي نجاح الحفظ فقط وليست خطأ حقيقي
+          if (msg.startsWith('__JUST_SAVED_SUCCESS__')) {
+            final fileName = msg.split(':')[1];
+            _showSuccessSnackBar(
+              '$fileName ${isArabic ? 'تم حفظه في مستنداتك بنجاح' : 'saved to your documents successfully'}',
+            );
+          } else {
+            _showErrorSnackBar(msg);
+          }
+        },
+      ),
+    );
   }
 
   void _changePDF() {
@@ -569,6 +550,8 @@ class _HomePageState extends State<HomePage>
                 fileName: _selectedFileName,
                 fileId: _selectedFileId,
                 pageCount: _selectedPageCount,
+                filesService:
+                    _filesService, // ← مرر الـ service هنا برضه أثناء التنقل
               ),
               type: PageTransitionType.slideFromRight,
             ),
@@ -590,6 +573,7 @@ class _HomePageState extends State<HomePage>
                 fileName: _selectedFileName,
                 fileId: _selectedFileId,
                 pageCount: _selectedPageCount,
+                filesService: _filesService,
               ),
               type: PageTransitionType.slideFromRight,
             ),
@@ -611,6 +595,7 @@ class _HomePageState extends State<HomePage>
                 fileName: _selectedFileName,
                 fileId: _selectedFileId,
                 pageCount: _selectedPageCount,
+                filesService: _filesService,
               ),
               type: PageTransitionType.slideFromRight,
             ),
@@ -675,7 +660,6 @@ class _HomePageState extends State<HomePage>
     ImageProvider? avatarImage,
   ) {
     final isDarkMode = theme.brightness == Brightness.dark;
-
     return AppBar(
       title: Row(
         children: [
@@ -713,11 +697,9 @@ class _HomePageState extends State<HomePage>
               : (isArabic ? 'تفعيل الوضع الداكن' : 'Switch to Dark Mode'),
           child: InkWell(
             borderRadius: BorderRadius.circular(30),
-            onTap: () {
-              MyApp.of(
-                context,
-              ).changeTheme(isDarkMode ? ThemeMode.light : ThemeMode.dark);
-            },
+            onTap: () => MyApp.of(
+              context,
+            ).changeTheme(isDarkMode ? ThemeMode.light : ThemeMode.dark),
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 300),
               padding: const EdgeInsets.all(8),
@@ -749,9 +731,7 @@ class _HomePageState extends State<HomePage>
             ),
           ),
         ),
-
         const SizedBox(width: 8),
-
         Hero(
           tag: 'profile_avatar',
           child: Material(
@@ -890,18 +870,36 @@ class _HomePageState extends State<HomePage>
           fileName: fileName,
           type: 'PDF',
         );
+
         if (uploadedFile != null) {
-          setState(() {
-            _selectedFileName = fileName;
-            _selectedFileId = uploadedFile['id']?.toString();
-            _selectedPageCount = (uploadedFile['page_count'] ?? 0) as int;
-            _isFileProcessing = uploadedFile['has_text'] == false;
-            _isUploading = false;
-          });
-          if (mounted)
+          if (!mounted) return;
+          // سؤال المستخدم فورياً باستخدام الـ context الثابت والمستقر للـ HomePage
+          final bool? shouldOpen = await showDialog<bool>(
+            context: context,
+            barrierDismissible: false,
+            builder: (dialogCtx) => _buildUploadActionPrompt(
+              dialogCtx,
+            ), // نمرر الـ dialogCtx الجديد
+          );
+
+          setState(() => _isUploading = false);
+
+          if (shouldOpen == true) {
+            setState(() {
+              _selectedFileName = fileName;
+              _selectedFileId = uploadedFile['id']?.toString();
+              _selectedPageCount = (uploadedFile['page_count'] ?? 0) as int;
+              _isFileProcessing = uploadedFile['has_text'] == false;
+            });
             _showSuccessSnackBar(
-              '$fileName ${isArabic ? 'تم رفعه بنجاح' : 'uploaded successfully'}',
+              '$fileName ${isArabic ? 'تم رفعه وفتحه بنجاح' : 'uploaded and opened successfully'}',
             );
+          } else {
+            _showSuccessSnackBar(
+              '$fileName ${isArabic ? 'تم حفظه في مستنداتك بنجاح' : 'saved to your documents successfully'}',
+            );
+            // هنا لا نغير قيم الـ _selectedFileName والـ _selectedFileId فبالتالي يظل الملف القديم كما هو!
+          }
         } else {
           setState(() => _isUploading = false);
           if (mounted)
@@ -1082,120 +1080,211 @@ class _HomePageState extends State<HomePage>
   }
 
   Widget _buildSelectedFile(ThemeData theme) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            const Color(0xFF10B981).withOpacity(0.1),
-            const Color(0xFF10B981).withOpacity(0.05),
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: const Color(0xFF10B981), width: 2),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: const Color(0xFF10B981),
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFF10B981).withOpacity(0.3),
-                  blurRadius: 8,
-                ),
+    // تحسين احترافي: كرت المستند المختار أصبح قابلاً للضغط لإعادة فتحه وتعديله بلمسة واحدة
+    return GestureDetector(
+      onTap: _pickPDF,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                const Color(0xFF10B981).withOpacity(0.12),
+                const Color(0xFF10B981).withOpacity(0.06),
               ],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
             ),
-            child: const Icon(
-              Icons.picture_as_pdf_rounded,
-              color: Colors.white,
-              size: 24,
-            ),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: const Color(0xFF10B981), width: 2),
           ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _selectedFileName!,
-                  style: theme.textTheme.bodyLarge?.copyWith(
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: -0.5,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF10B981),
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF10B981).withOpacity(0.3),
+                      blurRadius: 8,
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 4),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color:
-                        (_isFileProcessing
-                                ? Colors.orange
-                                : const Color(0xFF10B981))
-                            .withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (_isFileProcessing)
-                        const SizedBox(
-                          width: 10,
-                          height: 10,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            valueColor: AlwaysStoppedAnimation(Colors.orange),
-                          ),
-                        )
-                      else
-                        const Icon(
-                          Icons.check_circle,
-                          size: 12,
-                          color: Color(0xFF10B981),
-                        ),
-                      const SizedBox(width: 4),
-                      Text(
-                        _isFileProcessing
-                            ? (isArabic
-                                  ? 'جاري معالجة الملف...'
-                                  : 'Processing...')
-                            : (isArabic ? 'جاهز للمعالجة' : 'Ready to process'),
-                        style: TextStyle(
-                          color: _isFileProcessing
-                              ? Colors.orange
-                              : const Color(0xFF10B981),
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                        ),
+                child: const Icon(
+                  Icons.picture_as_pdf_rounded,
+                  color: Colors.white,
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _selectedFileName!,
+                      style: theme.textTheme.bodyLarge?.copyWith(
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: -0.5,
                       ),
-                    ],
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 4),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color:
+                            (_isFileProcessing
+                                    ? Colors.orange
+                                    : const Color(0xFF10B981))
+                                .withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (_isFileProcessing)
+                            const SizedBox(
+                              width: 10,
+                              height: 10,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation(
+                                  Colors.orange,
+                                ),
+                              ),
+                            )
+                          else
+                            const Icon(
+                              Icons.check_circle,
+                              size: 12,
+                              color: Color(0xFF10B981),
+                            ),
+                          const SizedBox(width: 4),
+                          Text(
+                            _isFileProcessing
+                                ? (isArabic
+                                      ? 'جاري معالجة الملف...'
+                                      : 'Processing...')
+                                : (isArabic
+                                      ? 'جاهز للمعالجة'
+                                      : 'Ready to process'),
+                            style: TextStyle(
+                              color: _isFileProcessing
+                                  ? Colors.orange
+                                  : const Color(0xFF10B981),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // أيقونة الحذف تظل منفصلة لمنع التداخل
+              IconButton(
+                onPressed: () {
+                  _changePDF();
+                },
+                icon: Icon(
+                  Icons.close_rounded,
+                  color: theme.iconTheme.color?.withOpacity(0.6),
+                ),
+                style: IconButton.styleFrom(
+                  backgroundColor: Colors.grey.withOpacity(0.1),
+                  shape: const CircleBorder(),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // نافذة الخيارات المودرن بعد عملية الرفع الناجحة لرفع مستوى الاحترافية والتحكم للمستخدم
+  Widget _buildUploadActionPrompt(BuildContext context) {
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: Container(
+        padding: const EdgeInsets.all(24),
+        constraints: const BoxConstraints(maxWidth: 400),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFF6366F1).withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.cloud_done_rounded,
+                color: Color(0xFF6366F1),
+                size: 40,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              isArabic ? 'تم الرفع بنجاح!' : 'Uploaded Successfully!',
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              isArabic
+                  ? 'ماذا تود أن تفعل بهذا الملف الآن؟'
+                  : 'What would you like to do with this file now?',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.grey[600], fontSize: 13.5),
+            ),
+            const SizedBox(height: 24),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.pop(
+                      context,
+                      false,
+                    ), // الرفع فقط دون التحديد النشط
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      side: const BorderSide(color: Color(0xFF6366F1)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: Text(isArabic ? 'رفع وحفظ فقط' : 'Just Save It'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () =>
+                        Navigator.pop(context, true), // الرفع والفتح فوراً
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF6366F1),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: Text(isArabic ? 'رفع وفتح فوراً' : 'Open & Process'),
                   ),
                 ),
               ],
             ),
-          ),
-          IconButton(
-            onPressed: _changePDF,
-            icon: Icon(
-              Icons.close_rounded,
-              color: theme.iconTheme.color?.withOpacity(0.6),
-            ),
-            style: IconButton.styleFrom(
-              backgroundColor: Colors.grey.withOpacity(0.1),
-              shape: const CircleBorder(),
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -1205,7 +1294,6 @@ class _HomePageState extends State<HomePage>
     for (int i = 0; i < _features.length; i++) {
       featureWidgets.add(_buildFeatureItem(context, theme, _features[i], i));
     }
-
     return Container(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -1295,7 +1383,6 @@ class _HomePageState extends State<HomePage>
             }
             return;
           }
-
           if (_selectedFileName == null) {
             _showErrorSnackBar(
               isArabic
@@ -1304,19 +1391,20 @@ class _HomePageState extends State<HomePage>
             );
             return;
           }
-
           Widget page;
           if (feature.route == '/explanation') {
             page = ExplanationPage(
               fileName: _selectedFileName,
               fileId: _selectedFileId,
               pageCount: _selectedPageCount,
+              filesService: _filesService,
             );
           } else if (feature.route == '/summary') {
             page = SummaryPage(
               fileName: _selectedFileName,
               fileId: _selectedFileId,
               pageCount: _selectedPageCount,
+              filesService: _filesService, // ← أضف هذا السطر هنا برضه
             );
           } else if (feature.route == '/mindmap') {
             page = MindMapPage(
@@ -1333,9 +1421,9 @@ class _HomePageState extends State<HomePage>
               fileName: _selectedFileName,
               fileId: _selectedFileId,
               pageCount: _selectedPageCount,
+              filesService: _filesService,
             );
           }
-
           Navigator.push(
             context,
             PageTransition(
@@ -1424,6 +1512,677 @@ class _HomePageState extends State<HomePage>
   }
 }
 
+// ─── تعديل وتطوير الـ FilePickerDialog لدعم تمييز الملف النشط بالكامل وعرض نافذة التأكيد الاختيارية بعد الرفع ───
+class FilePickerDialog extends StatefulWidget {
+  final FilesService filesService;
+  final bool isArabic;
+  final String?
+  currentFileId; // الـ ID الحالي الممرر لتعليمه وتمييزه في القائمة
+  final void Function(String fileId, String fileName, int pageCount)
+  onFileSelected;
+  final void Function(
+    String fileId,
+    String fileName,
+    int pageCount,
+    bool isProcessing,
+  )
+  onFileUploaded;
+  final VoidCallback onUploadStart;
+  final void Function(String msg) onError;
+
+  const FilePickerDialog({
+    required this.filesService,
+    required this.isArabic,
+    this.currentFileId,
+    required this.onFileSelected,
+    required this.onFileUploaded,
+    required this.onUploadStart,
+    required this.onError,
+  });
+
+  @override
+  State<FilePickerDialog> createState() => FilePickerDialogState();
+}
+
+class FilePickerDialogState extends State<FilePickerDialog> {
+  int _selectedTab = 0;
+  List<Map<String, dynamic>> _recentFiles = [];
+  List<Map<String, dynamic>> _filteredFiles = [];
+  bool _loadingRecent = true;
+  bool _isUploading = false;
+  final TextEditingController _searchController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _loadRecentFiles();
+    _searchController.addListener(_filterFiles);
+  }
+
+  @override
+  void dispose() {
+    _searchController.removeListener(_filterFiles);
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadRecentFiles() async {
+    final files = await widget.filesService.getRecentFiles();
+    if (mounted) {
+      setState(() {
+        _recentFiles = files;
+        _filteredFiles = files;
+        _loadingRecent = false;
+      });
+    }
+  }
+
+  void _filterFiles() {
+    final query = _searchController.text.toLowerCase().trim();
+    setState(() {
+      if (query.isEmpty) {
+        _filteredFiles = _recentFiles;
+      } else {
+        _filteredFiles = _recentFiles.where((file) {
+          final fileName = (file['fileName'] ?? file['file_name'] ?? 'Unknown')
+              .toString()
+              .toLowerCase();
+          return fileName.contains(query);
+        }).toList();
+      }
+    });
+  }
+
+  Future<void> _uploadNew() async {
+    if (_isUploading) return;
+    try {
+      FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['pdf'],
+        allowMultiple: false,
+        withData: true,
+      );
+      if (result == null) return;
+
+      final pickedFile = result.files.single;
+      final bytes = pickedFile.bytes;
+      final fileName = pickedFile.name;
+      if (bytes == null) return;
+
+      setState(() => _isUploading = true);
+      widget.onUploadStart();
+
+      // 1. الانتظار حتى يكتمل الرفع تماماً والتأكد من نجاحه في الداتا بيز والباكيند
+      final uploadedFile = await widget.filesService.uploadFileBytes(
+        bytes,
+        fileName: fileName,
+        type: 'PDF',
+      );
+
+      if (!mounted) return;
+
+      if (uploadedFile != null) {
+        // 2. إظهار نافذة السؤال *قبل* عمل pop للـ Dialog الحالي لضمان استقرار الـ Context
+        final bool? shouldOpen = await showDialog<bool>(
+          context: context,
+          barrierDismissible:
+              false, // إجبار المستخدم على الاختيار لضمان سلامة الـ Flow
+          builder: (dialogCtx) => _buildUploadPrompt(dialogCtx),
+        );
+
+        if (mounted) {
+          // 3. الآن نغلق الـ FilePickerDialog بأمان
+          Navigator.pop(context);
+
+          if (shouldOpen == true) {
+            // حالة الفتح الفوري: نمرر البيانات كاملة لتنشيط الملف
+            widget.onFileUploaded(
+              uploadedFile['id']?.toString() ?? '',
+              fileName,
+              (uploadedFile['page_count'] ?? 0) as int,
+              uploadedFile['has_text'] == false,
+            );
+          } else {
+            // حالة الحفظ فقط: الـ callback المخصص للحفظ بهدوء دون التأثير على الملف الحالي
+            widget.onError('__JUST_SAVED_SUCCESS__:$fileName');
+          }
+        }
+      } else {
+        Navigator.pop(context);
+        widget.onError(
+          widget.isArabic ? 'فشل رفع الملف' : 'Failed to upload file',
+        );
+      }
+    } catch (e) {
+      if (mounted) Navigator.pop(context);
+      widget.onError('Error: $e');
+    }
+  }
+
+  // بناء صندوق تأكيد رغبة المستخدم عند الانتهاء من عملية رفع مستند جديد
+  Widget _buildUploadPrompt(BuildContext context) {
+    final isArabic = widget.isArabic;
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: Container(
+        padding: const EdgeInsets.all(24),
+        constraints: const BoxConstraints(maxWidth: 380),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFF10B981).withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.cloud_done_rounded,
+                color: Color(0xFF10B981),
+                size: 36,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              isArabic ? 'تم الرفع بنجاح' : 'Uploaded Successfully',
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              isArabic
+                  ? 'هل تريد فتح ومعالجة المستند فوراً أم حفظه في قائمتك فقط؟'
+                  : 'Do you want to open and process it now, or just save it to your list?',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.grey[500], fontSize: 13),
+            ),
+            const SizedBox(height: 24),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.pop(context, false), // حفظ فقط
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      side: BorderSide(color: Colors.grey[300]!),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: Text(
+                      isArabic ? 'حفظ فقط' : 'Just Save',
+                      style: TextStyle(color: Colors.grey[700]),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () =>
+                        Navigator.pop(context, true), // فتح ومعالجة فورية
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF6366F1),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: Text(
+                      isArabic ? 'فتح ومعالجة' : 'Open & Process',
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _formatDate(dynamic date) {
+    if (date == null) return '';
+    try {
+      final dt = DateTime.parse(date.toString());
+      return '${dt.day}/${dt.month}/${dt.year}';
+    } catch (_) {
+      return '';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final bool isArabic = widget.isArabic;
+
+    return Directionality(
+      textDirection: isArabic ? TextDirection.rtl : TextDirection.ltr,
+      child: Dialog(
+        backgroundColor: theme.scaffoldBackgroundColor,
+        elevation: 10,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 580, maxHeight: 560),
+          child: Row(
+            children: [
+              Container(
+                width: 140,
+                decoration: BoxDecoration(
+                  color: theme.primaryColor.withOpacity(0.04),
+                  border: Border(
+                    right: isArabic
+                        ? BorderSide.none
+                        : BorderSide(
+                            color: theme.dividerColor.withOpacity(0.15),
+                            width: 1,
+                          ),
+                    left: isArabic
+                        ? BorderSide(
+                            color: theme.dividerColor.withOpacity(0.15),
+                            width: 1,
+                          )
+                        : BorderSide.none,
+                  ),
+                ),
+                child: Column(
+                  children: [
+                    const SizedBox(height: 28),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: Text(
+                        isArabic ? 'اختر ملفاً' : 'Select File',
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: theme.primaryColor.withOpacity(0.8),
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    _SideTab(
+                      icon: Icons.history_rounded,
+                      label: isArabic ? 'السابقة' : 'Recent',
+                      selected: _selectedTab == 0,
+                      color: theme.primaryColor,
+                      onTap: () => setState(() => _selectedTab = 0),
+                    ),
+                    const SizedBox(height: 10),
+                    _SideTab(
+                      icon: Icons.cloud_upload_outlined,
+                      label: isArabic ? 'رفع جديد' : 'Upload',
+                      selected: _selectedTab == 1,
+                      color: theme.primaryColor,
+                      onTap: () => setState(() => _selectedTab = 1),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: Stack(
+                  children: [
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 200),
+                      child: _selectedTab == 0
+                          ? _buildRecentTab(theme, isArabic)
+                          : _buildUploadTab(theme, isArabic),
+                    ),
+                    Positioned(
+                      top: 14,
+                      left: isArabic ? 14 : null,
+                      right: isArabic ? null : 14,
+                      child: IconButton(
+                        icon: const Icon(Icons.close_rounded, size: 20),
+                        style: IconButton.styleFrom(
+                          backgroundColor: theme.dividerColor.withOpacity(0.04),
+                          hoverColor: Colors.red.withOpacity(0.08),
+                          foregroundColor: theme.iconTheme.color?.withOpacity(
+                            0.6,
+                          ),
+                        ),
+                        onPressed: () => Navigator.pop(context),
+                        tooltip: isArabic ? 'إغلاق' : 'Close',
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRecentTab(ThemeData theme, bool isArabic) {
+    return Container(
+      key: const ValueKey('recent'),
+      padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.history_rounded, color: theme.primaryColor, size: 22),
+              const SizedBox(width: 10),
+              Text(
+                isArabic ? 'الملفات السابقة' : 'Recent Files',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Container(
+            height: 40,
+            decoration: BoxDecoration(
+              color: theme.dividerColor.withOpacity(0.03),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: theme.dividerColor.withOpacity(0.08)),
+            ),
+            child: TextField(
+              controller: _searchController,
+              style: const TextStyle(fontSize: 13.5),
+              decoration: InputDecoration(
+                hintText: isArabic
+                    ? 'ابحث باسم المستند...'
+                    : 'Search documents...',
+                hintStyle: TextStyle(color: Colors.grey[400], fontSize: 13),
+                prefixIcon: Icon(
+                  Icons.search_rounded,
+                  size: 18,
+                  color: Colors.grey[400],
+                ),
+                suffixIcon: _searchController.text.isNotEmpty
+                    ? GestureDetector(
+                        onTap: () => _searchController.clear(),
+                        child: Icon(
+                          Icons.clear_rounded,
+                          size: 16,
+                          color: Colors.grey[500],
+                        ),
+                      )
+                    : null,
+                border: InputBorder.none,
+                contentPadding: const EdgeInsets.symmetric(vertical: 9),
+              ),
+            ),
+          ),
+          const SizedBox(height: 14),
+          Expanded(
+            child: _loadingRecent
+                ? const Center(child: CircularProgressIndicator(strokeWidth: 3))
+                : _filteredFiles.isEmpty
+                ? Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          _searchController.text.isNotEmpty
+                              ? Icons.search_off_rounded
+                              : Icons.folder_open_rounded,
+                          size: 48,
+                          color: Colors.grey[300],
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          _searchController.text.isNotEmpty
+                              ? (isArabic
+                                    ? 'لم نجد نتائج مطابقة'
+                                    : 'No results found')
+                              : (isArabic
+                                    ? 'لا توجد ملفات سابقة'
+                                    : 'No recent files'),
+                          style: TextStyle(
+                            color: Colors.grey[400],
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                : ListView.separated(
+                    itemCount: _filteredFiles.length,
+                    physics: const BouncingScrollPhysics(),
+                    separatorBuilder: (_, __) => Divider(
+                      height: 8,
+                      color: theme.dividerColor.withOpacity(0.15),
+                    ),
+                    itemBuilder: (context, index) {
+                      final file = _filteredFiles[index];
+                      final fileId = file['id']?.toString() ?? '';
+                      final fileName =
+                          file['fileName'] ?? file['file_name'] ?? 'Unknown';
+                      final pageCount = (file['page_count'] ?? 0) as int;
+                      final date = _formatDate(
+                        file['createdAt'] ?? file['uploaded_at'],
+                      );
+
+                      // ميزة احترافية: التحقق مما إذا كان الملف الحالي في الـ List هو الملف النشط والمختار حالياً لتحديده وتلوينه بشكل مميز
+                      final bool isSelected =
+                          widget.currentFileId != null &&
+                          widget.currentFileId == fileId;
+
+                      return ListTile(
+                        hoverColor: theme.primaryColor.withOpacity(0.03),
+                        // تمييز الكارت النشط بخلفية ملونة رقيقة وحدود متناسقة
+                        tileColor: isSelected
+                            ? const Color(0xFF10B981).withOpacity(0.06)
+                            : Colors.transparent,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          side: isSelected
+                              ? const BorderSide(
+                                  color: Color(0xFF10B981),
+                                  width: 1.2,
+                                )
+                              : BorderSide.none,
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 0,
+                        ),
+                        leading: Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: isSelected
+                                ? const Color(0xFF10B981).withOpacity(0.15)
+                                : const Color(0xFF6366F1).withOpacity(0.08),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Icon(
+                            Icons.picture_as_pdf_rounded,
+                            color: isSelected
+                                ? const Color(0xFF10B981)
+                                : const Color(0xFF6366F1),
+                            size: 20,
+                          ),
+                        ),
+                        title: Text(
+                          fileName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: isSelected
+                                ? FontWeight.bold
+                                : FontWeight.w600,
+                            color: isSelected ? const Color(0xFF10B981) : null,
+                          ),
+                        ),
+                        subtitle: Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: Text(
+                            '$pageCount ${isArabic ? 'صفحة' : 'pages'} • $date',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: isSelected
+                                  ? const Color(0xFF10B981).withOpacity(0.8)
+                                  : Colors.grey[500],
+                            ),
+                          ),
+                        ),
+                        trailing: isSelected
+                            ? const Icon(
+                                Icons.check_circle_rounded,
+                                size: 16,
+                                color: Color(0xFF10B981),
+                              )
+                            : Icon(
+                                isArabic
+                                    ? Icons.arrow_back_ios_new_rounded
+                                    : Icons.arrow_forward_ios_rounded,
+                                size: 12,
+                                color: Colors.grey[400],
+                              ),
+                        onTap: () {
+                          Navigator.pop(context);
+                          widget.onFileSelected(fileId, fileName, pageCount);
+                        },
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildUploadTab(ThemeData theme, bool isArabic) {
+    return Container(
+      key: const ValueKey('upload'),
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          GestureDetector(
+            onTap: _isUploading ? null : _uploadNew,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 20),
+              decoration: BoxDecoration(
+                color: _isUploading
+                    ? theme.disabledColor.withOpacity(0.02)
+                    : theme.primaryColor.withOpacity(0.02),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: _isUploading
+                      ? Colors.grey[300]!
+                      : theme.primaryColor.withOpacity(0.3),
+                  width: 1.5,
+                  style: BorderStyle.solid,
+                ),
+              ),
+              child: Column(
+                children: [
+                  if (_isUploading) ...[
+                    const SizedBox(
+                      height: 48,
+                      width: 48,
+                      child: CircularProgressIndicator(strokeWidth: 3),
+                    ),
+                    const SizedBox(height: 18),
+                    Text(
+                      isArabic ? 'جاري رفع الملف...' : 'Uploading file...',
+                      style: TextStyle(
+                        color: theme.primaryColor,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ] else ...[
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: theme.primaryColor.withOpacity(0.08),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        Icons.cloud_upload_rounded,
+                        color: theme.primaryColor,
+                        size: 36,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      isArabic ? 'رفع ملف PDF' : 'Upload PDF',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      isArabic
+                          ? 'انقر هنا لتصفح الملفات من جهازك'
+                          : 'Click here to browse files from your device',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Colors.grey[500], fontSize: 12.5),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SideTab extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool selected;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _SideTab({
+    required this.icon,
+    required this.label,
+    required this.selected,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        margin: const EdgeInsets.symmetric(horizontal: 12),
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+        width: double.infinity,
+        decoration: BoxDecoration(
+          color: selected ? color.withOpacity(0.08) : Colors.transparent,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: selected ? color : Colors.grey[500], size: 22),
+            const SizedBox(height: 6),
+            Text(
+              label,
+              style: TextStyle(
+                color: selected ? color : Colors.grey[600],
+                fontSize: 12,
+                fontWeight: selected ? FontWeight.bold : FontWeight.w500,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class Feature {
   final String title;
   final String description;
@@ -1503,7 +2262,6 @@ class _AppDrawerState extends State<AppDrawer>
 
   ImageProvider? _getUserAvatar() {
     if (widget.user == null) return null;
-
     if (widget.user!['avatarBytes'] != null) {
       try {
         Uint8List bytes = base64Decode(widget.user!['avatarBytes']);
@@ -1512,12 +2270,10 @@ class _AppDrawerState extends State<AppDrawer>
         return null;
       }
     }
-
     if (widget.user!['avatar'] != null &&
         widget.user!['avatar'].toString().isNotEmpty) {
       return NetworkImage(widget.user!['avatar']);
     }
-
     return null;
   }
 
@@ -1596,10 +2352,7 @@ class _AppDrawerState extends State<AppDrawer>
           ),
           Expanded(
             child: ListView(
-              padding: const EdgeInsets.symmetric(
-                vertical: 8,
-                horizontal: 12,
-              ), // إرجاع الـ Padding الأصلي الملموم
+              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
               children: [
                 _buildAnimatedDrawerItem(
                   context,
@@ -1715,7 +2468,6 @@ class _AppDrawerState extends State<AppDrawer>
             curve: Interval(start, end, curve: Curves.easeInOut),
           ),
         );
-
     final Animation<Offset> slideAnimation =
         Tween<Offset>(begin: const Offset(0.08, 0.0), end: Offset.zero).animate(
           CurvedAnimation(
@@ -1738,9 +2490,7 @@ class _AppDrawerState extends State<AppDrawer>
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 250),
             curve: Curves.easeInOut,
-            margin: const EdgeInsets.symmetric(
-              vertical: 4,
-            ), // رجعت للمسافة القديمة الملمومة والشيك جداً
+            margin: const EdgeInsets.symmetric(vertical: 4),
             decoration: BoxDecoration(
               color: isHovered
                   ? itemColor.withOpacity(0.08)
@@ -1753,7 +2503,7 @@ class _AppDrawerState extends State<AppDrawer>
                   contentPadding: const EdgeInsets.symmetric(
                     horizontal: 16,
                     vertical: 2,
-                  ), // الـ Padding الأصلي الملموم
+                  ),
                   onTap: onTap,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(14),
@@ -1761,9 +2511,7 @@ class _AppDrawerState extends State<AppDrawer>
                   leading: AnimatedContainer(
                     duration: const Duration(milliseconds: 250),
                     curve: Curves.easeInOut,
-                    padding: const EdgeInsets.all(
-                      8,
-                    ), // البوكس الأصلي بدون فراغ مبالغ فيه
+                    padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
                       color: isHovered
                           ? itemColor.withOpacity(0.15)
@@ -1781,7 +2529,7 @@ class _AppDrawerState extends State<AppDrawer>
                         icon,
                         color: itemColor,
                         size: 20,
-                      ), // الحجم الأصلي المتناسق
+                      ), // ← الـ style تم التأكد من عدم وجوده هنا بالخطأ
                     ),
                   ),
                   title: AnimatedDefaultTextStyle(
@@ -1792,8 +2540,7 @@ class _AppDrawerState extends State<AppDrawer>
                           theme.textTheme.bodyLarge?.color ??
                           Colors.black,
                       fontWeight: isHovered ? FontWeight.w700 : FontWeight.w600,
-                      fontSize:
-                          16, // الخط كبير وواضح مع الحفاظ على الأبعاد الضيقة الملمومة للـ ListTile
+                      fontSize: 16,
                     ),
                     child: Text(title),
                   ),

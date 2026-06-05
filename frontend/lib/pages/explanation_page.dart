@@ -12,6 +12,9 @@ import 'widgets/pdf_export.dart';
 import 'widgets/word_export.dart';
 import 'widgets/math_markdown.dart';
 import 'widgets/particles_painter.dart';
+import 'package:dio/dio.dart';
+import 'package:project_flutter/services/files_service.dart';
+import 'home_page.dart';
 
 class ExplanationPage extends StatefulWidget {
   final String? fileName;
@@ -20,6 +23,7 @@ class ExplanationPage extends StatefulWidget {
   final int pageCount;
   final int? fromPage;
   final int? toPage;
+  final FilesService filesService;
 
   const ExplanationPage({
     Key? key,
@@ -29,6 +33,7 @@ class ExplanationPage extends StatefulWidget {
     this.pageCount = 0,
     this.fromPage,
     this.toPage,
+    required this.filesService,
   }) : super(key: key);
 
   @override
@@ -40,7 +45,10 @@ class _ExplanationPageState extends State<ExplanationPage>
   bool _isLoading = false;
   List<Map<String, dynamic>> _chunks = [];
 
-  // Controllers حماية المدخلات من الـ Rebuild
+  // ✅ متغيرات نشطة بدل الاعتماد على widget مباشرة
+  String? _activeFileName;
+  String? _activeFileId;
+
   final TextEditingController _fromController = TextEditingController();
   final TextEditingController _toController = TextEditingController();
 
@@ -49,21 +57,28 @@ class _ExplanationPageState extends State<ExplanationPage>
   late Animation<double> _fadeAnimation;
   late Animation<Offset> _slideAnimation;
 
-  // متغيرات التحكم في نطاق الصفحات
   int? _selectedFromPage;
   int? _selectedToPage;
   int _totalPages = 0;
 
   final ApiService _apiService = ApiService();
 
+  CancelToken? _cancelToken;
+
   @override
   void initState() {
     super.initState();
+
+    // ✅ تهيئة المتغيرات النشطة من الـ widget
+    _activeFileName = widget.fileName;
+    _activeFileId = widget.fileId;
     _totalPages = widget.pageCount;
 
-    // استرجاع نطاق الصفحات الممرر من صفحة التاريخ (History)
     if (widget.fromPage != null) _selectedFromPage = widget.fromPage;
     if (widget.toPage != null) _selectedToPage = widget.toPage;
+
+    _selectedFromPage ??= 1;
+    _selectedToPage ??= (_totalPages > 0 ? _totalPages : 1);
 
     if (widget.explanation != null) {
       _chunks = _parseExplanation(widget.explanation);
@@ -89,8 +104,8 @@ class _ExplanationPageState extends State<ExplanationPage>
   @override
   void dispose() {
     _animationController.dispose();
-    _fromController.dispose(); // تنظيف حقل البداية
-    _toController.dispose(); // تنظيف حقل النهاية
+    _fromController.dispose();
+    _toController.dispose();
     super.dispose();
   }
 
@@ -133,12 +148,133 @@ class _ExplanationPageState extends State<ExplanationPage>
       .where((s) => s.isNotEmpty)
       .join('\n\n---\n\n');
 
-  // ── Page Range Dialog (مصلح بالكامل ومربوط بدالة الشرح الذكي) ─────────────────
+  // ✅ حماية الخروج أثناء التحميل (نفس نظام summary_page)
+  Future<bool> _onWillPop() async {
+    if (!_isLoading) return true;
+
+    final bool? shouldCancel = await showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            const Icon(
+              Icons.warning_amber_rounded,
+              color: Colors.orange,
+              size: 26,
+            ),
+            const SizedBox(width: 10),
+            Text(
+              isArabic ? 'تنبيه: جاري التحميل' : 'Warning: Generating',
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+            ),
+          ],
+        ),
+        content: Text(
+          isArabic
+              ? 'هل أنت متأكد من مغادرة الشاشة؟ سيؤدي ذلك إلى إلغاء عملية الشرح الحالية.'
+              : 'Are you sure you want to leave? This will cancel the current explanation.',
+          style: TextStyle(color: Colors.grey[600], fontSize: 14, height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx, false),
+            child: Text(
+              isArabic ? 'تابع الانتظار' : 'Keep Waiting',
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+            onPressed: () {
+              if (_cancelToken != null && !_cancelToken!.isCancelled) {
+                _cancelToken!.cancel(
+                  isArabic
+                      ? 'تم إلغاء العملية بواسطة المستخدم'
+                      : 'Cancelled by user',
+                );
+              }
+              Navigator.pop(dialogCtx, true);
+            },
+            child: Text(isArabic ? 'إلغاء ومغادرة' : 'Cancel & Leave'),
+          ),
+        ],
+      ),
+    );
+
+    return shouldCancel ?? false;
+  }
+
+  // ✅ تغيير الملف النشط (نسخة محسّنة مطابقة لـ summary_page)
+  Future<void> _changeActiveFile() async {
+    if (_isLoading) {
+      _showSnackBar(
+        isArabic
+            ? 'برجاء الانتظار حتى ينتهي الشرح الحالي'
+            : 'Please wait until the current explanation is complete',
+        Colors.orange,
+      );
+      return;
+    }
+
+    await showDialog(
+      context: context,
+      builder: (dialogContext) => FilePickerDialog(
+        filesService: widget.filesService,
+        isArabic: isArabic,
+        currentFileId: _activeFileId,
+        onFileSelected: (fileId, fileName, pageCount) {
+          setState(() {
+            _activeFileId = fileId;
+            _activeFileName = fileName;
+            _totalPages = pageCount;
+            _selectedFromPage = 1;
+            _selectedToPage = pageCount > 0 ? pageCount : 1;
+            _chunks = [];
+          });
+        },
+        onFileUploaded: (fileId, fileName, pageCount, isProcessing) {
+          setState(() {
+            _activeFileId = fileId;
+            _activeFileName = fileName;
+            _totalPages = pageCount;
+            _selectedFromPage = 1;
+            _selectedToPage = pageCount > 0 ? pageCount : 1;
+            _chunks = [];
+          });
+        },
+        onUploadStart: () => _showSnackBar(
+          isArabic ? 'جاري بدء الرفع...' : 'Starting upload...',
+          const Color(0xFF6366F1),
+        ),
+        onError: (msg) {
+          if (msg.startsWith('__JUST_SAVED_SUCCESS__')) {
+            final savedName = msg.split(':')[1];
+            _showSnackBar(
+              isArabic
+                  ? '$savedName تم حفظه بنجاح'
+                  : '$savedName saved successfully',
+              Colors.green,
+            );
+          } else {
+            _showSnackBar(msg, Colors.red);
+          }
+        },
+      ),
+    );
+  }
+
+  // ── Page Range Dialog ───────────────────────────────────────────
   Future<void> _showPageRangeDialog() async {
     int fromPage = _selectedFromPage ?? 1;
     int toPage = _selectedToPage ?? (_totalPages > 0 ? _totalPages : 1);
 
-    // تهيئة النص داخل الـ Controllers بالقيمة الحالية قبل فتح الديالوج مباشرة
     _fromController.text = '$fromPage';
     _toController.text = '$toPage';
 
@@ -184,8 +320,6 @@ class _ExplanationPageState extends State<ExplanationPage>
                 ),
               ),
               const SizedBox(height: 24),
-
-              // ── من الصفحة ──
               Text(
                 isArabic ? 'من الصفحة' : 'From Page',
                 style: const TextStyle(
@@ -213,10 +347,7 @@ class _ExplanationPageState extends State<ExplanationPage>
                   }
                 }),
               ),
-
               const SizedBox(height: 20),
-
-              // ── إلى الصفحة ──
               Text(
                 isArabic ? 'إلى الصفحة' : 'To Page',
                 style: const TextStyle(
@@ -264,30 +395,29 @@ class _ExplanationPageState extends State<ExplanationPage>
                 ),
               ),
               onPressed: () {
-                // الفحص النهائي الذكي للمدخلات اليدوية من الكيبورد قبل إغلاق الديالوج
                 int finalFrom = int.tryParse(_fromController.text) ?? fromPage;
                 int finalTo = int.tryParse(_toController.text) ?? toPage;
 
                 if (finalFrom < 1 ||
                     (_totalPages > 0 && finalFrom > _totalPages)) {
-                  _showErrorSnackBar(
+                  _showSnackBar(
                     isArabic
                         ? 'رقم بداية الصفحة غير صحيح! يجب أن يكون بين 1 و $_totalPages'
                         : 'Invalid start page! Must be between 1 and $_totalPages',
+                    Colors.orange,
                   );
                   return;
                 }
-
                 if (finalTo < finalFrom ||
                     (_totalPages > 0 && finalTo > _totalPages)) {
-                  _showErrorSnackBar(
+                  _showSnackBar(
                     isArabic
                         ? 'رقم نهاية الصفحة غير صحيح أو أقل من صفحة البداية!'
                         : 'Invalid end page or less than start page!',
+                    Colors.orange,
                   );
                   return;
                 }
-
                 Navigator.pop(context, {'from': finalFrom, 'to': finalTo});
               },
               child: Text(isArabic ? 'توليد' : 'Generate'),
@@ -302,11 +432,10 @@ class _ExplanationPageState extends State<ExplanationPage>
         _selectedFromPage = result['from'];
         _selectedToPage = result['to'];
       });
-      await _explainDocument(); // ✅ تم الإصلاح: استدعاء دالة الشرح الفعلي هنا بدلاً من دالة الأسئلة المفقودة
+      await _explainDocument();
     }
   }
 
-  // ── Helper Widget لمعداد الصفحات ──────────────────────────────
   Widget _buildPageCounter({
     required int value,
     required int min,
@@ -360,9 +489,7 @@ class _ExplanationPageState extends State<ExplanationPage>
             onChanged: (text) {
               if (text.isEmpty) return;
               int? parsed = int.tryParse(text);
-              if (parsed != null) {
-                onChanged(parsed);
-              }
+              if (parsed != null) onChanged(parsed);
             },
           ),
         ),
@@ -376,26 +503,33 @@ class _ExplanationPageState extends State<ExplanationPage>
     );
   }
 
+  // ✅ _explainDocument تستخدم _activeFileId بدل widget.fileId
   Future<void> _explainDocument() async {
-    if (widget.fileId == null) {
+    if (_activeFileId == null) {
       _showSnackBar(
         isArabic ? 'لم يتم اختيار ملف' : 'No file selected',
         Colors.red,
       );
       return;
     }
+
     setState(() {
       _isLoading = true;
       _chunks = [];
     });
+
     try {
+      _cancelToken = CancelToken();
+
       final response = await _apiService.dio.post(
-        '/files/${widget.fileId}/explain',
+        '/files/$_activeFileId/explain',
+        cancelToken: _cancelToken,
         data: {
           if (_selectedFromPage != null) 'from_page': _selectedFromPage,
           if (_selectedToPage != null) 'to_page': _selectedToPage,
         },
       );
+
       if (response.data['success'] == true) {
         final raw = response.data['data']['explanation'];
         final chunks = _parseExplanation(raw);
@@ -405,10 +539,11 @@ class _ExplanationPageState extends State<ExplanationPage>
         });
         _animationController.reset();
         _animationController.forward();
-        if (widget.fileId != null && chunks.isNotEmpty) {
+
+        if (_activeFileId != null && chunks.isNotEmpty) {
           await HistoryStore.add({
-            'file_id': widget.fileId,
-            'file_name': widget.fileName ?? '',
+            'file_id': _activeFileId,
+            'file_name': _activeFileName ?? '',
             'type': 'explanation',
             'data': raw,
             'from_page': _selectedFromPage,
@@ -417,6 +552,7 @@ class _ExplanationPageState extends State<ExplanationPage>
             'date': DateTime.now().toIso8601String(),
           });
         }
+
         _showSnackBar(
           isArabic ? 'تم الشرح بنجاح' : 'Explanation completed successfully',
           Colors.green,
@@ -429,9 +565,26 @@ class _ExplanationPageState extends State<ExplanationPage>
           Colors.red,
         );
       }
-    } catch (e) {
+    } on DioException catch (e) {
+      if (!mounted) return;
       setState(() => _isLoading = false);
-      _showSnackBar(isArabic ? 'حدث خطأ: $e' : 'Error: $e', Colors.red);
+
+      if (CancelToken.isCancel(e)) {
+        debugPrint('Explanation request cancelled cleanly.');
+        return;
+      }
+
+      _showSnackBar(
+        isArabic ? 'فشل الاتصال بالسيرفر' : 'Failed to connect to server',
+        Colors.red,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      _showSnackBar(
+        isArabic ? 'حدث خطأ غير متوقع' : 'Unexpected error occurred',
+        Colors.red,
+      );
     }
   }
 
@@ -508,7 +661,7 @@ class _ExplanationPageState extends State<ExplanationPage>
                 PdfExporter.exportSummary(
                   context: context,
                   summary: _flatText,
-                  fileName: widget.fileName ?? 'Explanation',
+                  fileName: _activeFileName ?? 'Explanation',
                   isArabic: isArabic,
                 );
               },
@@ -526,7 +679,7 @@ class _ExplanationPageState extends State<ExplanationPage>
                 WordExporter.exportSummary(
                   context: context,
                   summary: _flatText,
-                  fileName: widget.fileName ?? 'Explanation',
+                  fileName: _activeFileName ?? 'Explanation',
                   isArabic: isArabic,
                 );
               },
@@ -555,13 +708,9 @@ class _ExplanationPageState extends State<ExplanationPage>
         backgroundColor: color,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        duration: const Duration(seconds: 2),
+        duration: const Duration(seconds: 3),
       ),
     );
-  }
-
-  void _showErrorSnackBar(String message) {
-    _showSnackBar(message, Colors.red);
   }
 
   void _copyToClipboard() {
@@ -655,487 +804,527 @@ class _ExplanationPageState extends State<ExplanationPage>
 
     return CallbackShortcuts(
       bindings: {
-        const SingleActivator(LogicalKeyboardKey.escape): () {
-          if (Navigator.canPop(context)) Navigator.pop(context);
+        const SingleActivator(LogicalKeyboardKey.escape): () async {
+          final shouldPop = await _onWillPop();
+          if (shouldPop && context.mounted) {
+            if (Navigator.canPop(context)) Navigator.pop(context);
+          }
         },
       },
       child: Focus(
         autofocus: true,
-        child: Scaffold(
-          backgroundColor: theme.scaffoldBackgroundColor,
-          appBar: AppBar(
-            title: Text(
-              isArabic ? 'الشرح' : 'Explanation',
-              style: const TextStyle(fontWeight: FontWeight.w600),
-            ),
-            elevation: 0,
-            backgroundColor: theme.cardColor,
-            actions: [
-              if (widget.fileId != null)
-                IconButton(
-                  onPressed: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => ChatPage(
-                        fileId: widget.fileId!,
-                        fileName: widget.fileName ?? "",
+        child: PopScope(
+          canPop: !_isLoading,
+          onPopInvokedWithResult: (didPop, result) async {
+            if (didPop) return;
+            final shouldPop = await _onWillPop();
+            if (shouldPop && context.mounted) Navigator.pop(context);
+          },
+          child: Scaffold(
+            backgroundColor: theme.scaffoldBackgroundColor,
+            appBar: AppBar(
+              title: Text(
+                isArabic ? 'الشرح' : 'Explanation',
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+              elevation: 0,
+              backgroundColor: theme.cardColor,
+              actions: [
+                if (_activeFileId != null)
+                  IconButton(
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => ChatPage(
+                          fileId: _activeFileId!,
+                          fileName: _activeFileName ?? '',
+                        ),
                       ),
                     ),
+                    icon: const Icon(Icons.lightbulb_rounded),
+                    color: const Color(0xFFFBBF24),
+                    tooltip: isArabic ? 'الشات الذكي' : 'Smart Chat',
                   ),
-                  icon: const Icon(Icons.lightbulb_rounded),
-                  color: const Color(0xFFFBBF24),
-                  tooltip: isArabic ? 'الشات الذكي' : 'Smart Chat',
-                ),
-              if (_chunks.isNotEmpty) ...[
-                IconButton(
-                  onPressed: _showExportSheet,
-                  icon: const Icon(Icons.ios_share_rounded),
-                  color: const Color(0xFF6366F1),
-                  tooltip: isArabic ? 'تصدير' : 'Export',
-                ),
+                if (_chunks.isNotEmpty)
+                  IconButton(
+                    onPressed: _showExportSheet,
+                    icon: const Icon(Icons.ios_share_rounded),
+                    color: const Color(0xFF6366F1),
+                    tooltip: isArabic ? 'تصدير' : 'Export',
+                  ),
               ],
-            ],
-          ),
-          body: Center(
-            child: ConstrainedBox(
-              constraints: BoxConstraints(
-                maxWidth: Responsive.maxWidth(context),
-              ),
-              child: SingleChildScrollView(
-                physics: const BouncingScrollPhysics(),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // ── Header ──
-                    FadeTransition(
-                      opacity: _fadeAnimation,
-                      child: Container(
-                        width: double.infinity,
-                        decoration: BoxDecoration(
-                          color: theme.cardColor,
-                          borderRadius: const BorderRadius.only(
-                            bottomLeft: Radius.circular(32),
-                            bottomRight: Radius.circular(32),
-                          ),
-                        ),
-                        padding: const EdgeInsets.fromLTRB(24, 32, 24, 32),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.all(10),
-                                  decoration: BoxDecoration(
-                                    gradient: const LinearGradient(
-                                      colors: [
-                                        Color(0xFF6366F1),
-                                        Color(0xFF8B5CF6),
-                                      ],
-                                    ),
-                                    borderRadius: BorderRadius.circular(16),
-                                  ),
-                                  child: const Icon(
-                                    Icons.lightbulb_rounded,
-                                    color: Colors.white,
-                                    size: 24,
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      ShimmerText(
-                                        text: isArabic
-                                            ? 'الشرح الذكي'
-                                            : 'Smart Explanation',
-                                        style:
-                                            (theme.textTheme.headlineMedium ??
-                                                    const TextStyle())
-                                                .copyWith(
-                                                  fontWeight: FontWeight.bold,
-                                                  letterSpacing: -0.5,
-                                                  color: const Color(
-                                                    0xFF6366F1,
-                                                  ),
-                                                ),
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        isArabic
-                                            ? 'شرح بالعامية المصرية بأسلوب بسيط'
-                                            : 'Explained in simple Egyptian Arabic',
-                                        style: theme.textTheme.bodyMedium
-                                            ?.copyWith(color: Colors.grey[600]),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
+            ),
+            body: Center(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: Responsive.maxWidth(context),
+                ),
+                child: SingleChildScrollView(
+                  physics: const BouncingScrollPhysics(),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // ── Header card ──
+                      FadeTransition(
+                        opacity: _fadeAnimation,
+                        child: Container(
+                          width: double.infinity,
+                          decoration: BoxDecoration(
+                            color: theme.cardColor,
+                            borderRadius: const BorderRadius.only(
+                              bottomLeft: Radius.circular(32),
+                              bottomRight: Radius.circular(32),
                             ),
-                            const SizedBox(height: 20),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 12,
-                              ),
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  colors: [
-                                    const Color(0xFF6366F1).withOpacity(0.1),
-                                    const Color(0xFF8B5CF6).withOpacity(0.05),
-                                  ],
-                                ),
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(
-                                  color: const Color(
-                                    0xFF6366F1,
-                                  ).withOpacity(0.2),
-                                ),
-                              ),
-                              child: Row(
+                          ),
+                          padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
                                 children: [
                                   Container(
-                                    padding: const EdgeInsets.all(8),
+                                    padding: const EdgeInsets.all(10),
                                     decoration: BoxDecoration(
-                                      color: const Color(
-                                        0xFF6366F1,
-                                      ).withOpacity(0.2),
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    child: const Icon(
-                                      Icons.description_rounded,
-                                      color: Color(0xFF6366F1),
-                                      size: 20,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Text(
-                                      widget.fileName ??
-                                          (isArabic
-                                              ? 'لم يتم اختيار ملف'
-                                              : 'No file selected'),
-                                      style: theme.textTheme.bodyMedium
-                                          ?.copyWith(
-                                            fontWeight: FontWeight.w500,
-                                            letterSpacing: -0.3,
-                                          ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-
-                    const SizedBox(height: 12),
-
-                    // ── Generate button ──
-                    SlideTransition(
-                      position: _slideAnimation,
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: theme.cardColor,
-                          borderRadius: BorderRadius.circular(24),
-                        ),
-                        margin: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 8,
-                        ),
-                        padding: const EdgeInsets.all(20),
-                        child: InteractiveScale(
-                          onTap: _isLoading
-                              ? null
-                              : () async {
-                                  await _showPageRangeDialog();
-                                },
-                          child: SizedBox(
-                            width: double.infinity,
-                            child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 300),
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                              decoration: BoxDecoration(
-                                gradient: _isLoading
-                                    ? LinearGradient(
-                                        colors: [
-                                          Colors.grey.shade400,
-                                          Colors.grey.shade500,
-                                        ],
-                                      )
-                                    : const LinearGradient(
-                                        begin: Alignment.topLeft,
-                                        end: Alignment.bottomRight,
+                                      gradient: const LinearGradient(
                                         colors: [
                                           Color(0xFF6366F1),
                                           Color(0xFF8B5CF6),
                                         ],
                                       ),
-                                borderRadius: BorderRadius.circular(20),
-                                boxShadow: _isLoading
-                                    ? []
-                                    : [
-                                        BoxShadow(
-                                          color: const Color(
-                                            0xFF6366F1,
-                                          ).withOpacity(0.4),
-                                          blurRadius: 20,
-                                          offset: const Offset(0, 8),
-                                        ),
-                                      ],
-                              ),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  if (_isLoading)
-                                    const SizedBox(
-                                      width: 22,
-                                      height: 22,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2.5,
-                                        valueColor: AlwaysStoppedAnimation(
-                                          Colors.white,
-                                        ),
-                                      ),
-                                    )
-                                  else
-                                    const Icon(
+                                      borderRadius: BorderRadius.circular(16),
+                                    ),
+                                    child: const Icon(
                                       Icons.lightbulb_rounded,
                                       color: Colors.white,
-                                      size: 22,
+                                      size: 24,
                                     ),
-                                  const SizedBox(width: 10),
-                                  Text(
-                                    _isLoading
-                                        ? (isArabic
-                                              ? 'جاري الشرح...'
-                                              : 'Explaining...')
-                                        : (_chunks.isEmpty
-                                              ? (isArabic
-                                                    ? 'اشرحلي المستند'
-                                                    : 'Explain Document')
-                                              : (isArabic
-                                                    ? 'إعادة الشرح'
-                                                    : 'Re-explain')),
-                                    style: const TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w600,
-                                      color: Colors.white,
-                                      letterSpacing: -0.3,
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        ShimmerText(
+                                          text: isArabic
+                                              ? 'الشرح الذكي'
+                                              : 'Smart Explanation',
+                                          style:
+                                              (theme.textTheme.headlineMedium ??
+                                                      const TextStyle())
+                                                  .copyWith(
+                                                    fontWeight: FontWeight.bold,
+                                                    letterSpacing: -0.5,
+                                                    color: const Color(
+                                                      0xFF6366F1,
+                                                    ),
+                                                  ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          isArabic
+                                              ? 'شرح بالعامية المصرية بأسلوب بسيط'
+                                              : 'Explained in simple Egyptian Arabic',
+                                          style: theme.textTheme.bodyMedium
+                                              ?.copyWith(
+                                                color: Colors.grey[600],
+                                              ),
+                                        ),
+                                      ],
                                     ),
                                   ),
                                 ],
                               ),
-                            ),
+                              const SizedBox(height: 20),
+
+                              // ✅ زر تغيير الملف (مطابق لـ summary_page)
+                              GestureDetector(
+                                onTap: _changeActiveFile,
+                                child: MouseRegion(
+                                  cursor: _isLoading
+                                      ? SystemMouseCursors.basic
+                                      : SystemMouseCursors.click,
+                                  child: AnimatedContainer(
+                                    duration: const Duration(milliseconds: 200),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 12,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      gradient: LinearGradient(
+                                        colors: [
+                                          const Color(
+                                            0xFF6366F1,
+                                          ).withOpacity(0.12),
+                                          const Color(
+                                            0xFF8B5CF6,
+                                          ).withOpacity(0.06),
+                                        ],
+                                      ),
+                                      borderRadius: BorderRadius.circular(16),
+                                      border: Border.all(
+                                        color: const Color(
+                                          0xFF6366F1,
+                                        ).withOpacity(0.35),
+                                        width: 1.2,
+                                      ),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.all(8),
+                                          decoration: BoxDecoration(
+                                            color: const Color(
+                                              0xFF6366F1,
+                                            ).withOpacity(0.2),
+                                            borderRadius: BorderRadius.circular(
+                                              12,
+                                            ),
+                                          ),
+                                          child: const Icon(
+                                            Icons.description_rounded,
+                                            color: Color(0xFF6366F1),
+                                            size: 20,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Text(
+                                            _activeFileName ??
+                                                (isArabic
+                                                    ? 'لم يتم اختيار ملف'
+                                                    : 'No file selected'),
+                                            style: theme.textTheme.bodyMedium
+                                                ?.copyWith(
+                                                  fontWeight: FontWeight.bold,
+                                                  letterSpacing: -0.3,
+                                                ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                        Icon(
+                                          Icons.swap_horizontal_circle_outlined,
+                                          color: const Color(
+                                            0xFF6366F1,
+                                          ).withOpacity(0.7),
+                                          size: 22,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ),
-                    ),
 
-                    const SizedBox(height: 4),
+                      const SizedBox(height: 12),
 
-                    // ── Result card ──
-                    SlideTransition(
-                      position:
-                          Tween<Offset>(
-                            begin: const Offset(0, 0.25),
-                            end: Offset.zero,
-                          ).animate(
-                            CurvedAnimation(
-                              parent: _animationController,
-                              curve: Curves.easeOutCubic,
-                            ),
+                      // ── Generate button ──
+                      SlideTransition(
+                        position: _slideAnimation,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: theme.cardColor,
+                            borderRadius: BorderRadius.circular(24),
                           ),
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: theme.cardColor,
-                          borderRadius: BorderRadius.circular(24),
-                        ),
-                        margin: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 8,
-                        ),
-                        padding: const EdgeInsets.all(24),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.all(8),
-                                  decoration: BoxDecoration(
-                                    gradient: const LinearGradient(
-                                      colors: [
-                                        Color(0xFF6366F1),
-                                        Color(0xFF8B5CF6),
-                                      ],
-                                    ),
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: const Icon(
-                                    Icons.lightbulb_rounded,
-                                    color: Colors.white,
-                                    size: 20,
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Text(
-                                  isArabic
-                                      ? 'نتيجة الشرح'
-                                      : 'Explanation Result',
-                                  style: theme.textTheme.titleLarge?.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                    letterSpacing: -0.5,
-                                  ),
-                                ),
-                              ],
-                            ),
-
-                            const SizedBox(height: 20),
-
-                            AnimatedContainer(
-                              duration: const Duration(milliseconds: 400),
+                          margin: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 8,
+                          ),
+                          padding: const EdgeInsets.all(20),
+                          child: InteractiveScale(
+                            onTap: _isLoading
+                                ? null
+                                : () async => await _showPageRangeDialog(),
+                            child: SizedBox(
                               width: double.infinity,
-                              constraints: const BoxConstraints(minHeight: 250),
-                              padding: const EdgeInsets.all(20),
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  colors: [
-                                    theme.scaffoldBackgroundColor,
-                                    theme.scaffoldBackgroundColor.withOpacity(
-                                      0.8,
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 300),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 16,
+                                ),
+                                decoration: BoxDecoration(
+                                  gradient: _isLoading
+                                      ? LinearGradient(
+                                          colors: [
+                                            Colors.grey.shade400,
+                                            Colors.grey.shade500,
+                                          ],
+                                        )
+                                      : const LinearGradient(
+                                          begin: Alignment.topLeft,
+                                          end: Alignment.bottomRight,
+                                          colors: [
+                                            Color(0xFF6366F1),
+                                            Color(0xFF8B5CF6),
+                                          ],
+                                        ),
+                                  borderRadius: BorderRadius.circular(20),
+                                  boxShadow: _isLoading
+                                      ? []
+                                      : [
+                                          BoxShadow(
+                                            color: const Color(
+                                              0xFF6366F1,
+                                            ).withOpacity(0.4),
+                                            blurRadius: 20,
+                                            offset: const Offset(0, 8),
+                                          ),
+                                        ],
+                                ),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    if (_isLoading)
+                                      const SizedBox(
+                                        width: 22,
+                                        height: 22,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2.5,
+                                          valueColor: AlwaysStoppedAnimation(
+                                            Colors.white,
+                                          ),
+                                        ),
+                                      )
+                                    else
+                                      const Icon(
+                                        Icons.lightbulb_rounded,
+                                        color: Colors.white,
+                                        size: 22,
+                                      ),
+                                    const SizedBox(width: 10),
+                                    Text(
+                                      _isLoading
+                                          ? (isArabic
+                                                ? 'جاري الشرح...'
+                                                : 'Explaining...')
+                                          : (_chunks.isEmpty
+                                                ? (isArabic
+                                                      ? 'اشرحلي المستند'
+                                                      : 'Explain Document')
+                                                : (isArabic
+                                                      ? 'إعادة الشرح'
+                                                      : 'Re-explain')),
+                                      style: const TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.white,
+                                        letterSpacing: -0.3,
+                                      ),
                                     ),
                                   ],
                                 ),
-                                borderRadius: BorderRadius.circular(20),
-                                border: Border.all(
-                                  color: const Color(
-                                    0xFF6366F1,
-                                  ).withOpacity(0.2),
-                                ),
                               ),
-                              child: _isLoading
-                                  ? Center(
-                                      child: Column(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.center,
-                                        children: [
-                                          const SizedBox(
-                                            width: 50,
-                                            height: 50,
-                                            child: CircularProgressIndicator(
-                                              strokeWidth: 3,
-                                              valueColor:
-                                                  AlwaysStoppedAnimation(
-                                                    Color(0xFF6366F1),
-                                                  ),
-                                            ),
-                                          ),
-                                          const SizedBox(height: 20),
-                                          Text(
-                                            isArabic
-                                                ? 'جاري الشرح...'
-                                                : 'Explaining your document...',
-                                            style: theme.textTheme.bodyMedium
-                                                ?.copyWith(
-                                                  color: Colors.grey[600],
-                                                ),
-                                          ),
-                                        ],
-                                      ),
-                                    )
-                                  : _chunks.isEmpty
-                                  ? Center(
-                                      child: Column(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.center,
-                                        children: [
-                                          Icon(
-                                            Icons.lightbulb_outline_rounded,
-                                            size: 70,
-                                            color: Colors.grey[400],
-                                          ),
-                                          const SizedBox(height: 16),
-                                          Text(
-                                            isArabic
-                                                ? 'انقر على "اشرحلي المستند" للبدء'
-                                                : 'Click "Explain Document" to start',
-                                            style: theme.textTheme.titleMedium
-                                                ?.copyWith(
-                                                  color: Colors.grey[500],
-                                                  fontWeight: FontWeight.w500,
-                                                ),
-                                          ),
-                                        ],
-                                      ),
-                                    )
-                                  : Stack(
-                                      children: [
-                                        Padding(
-                                          padding: const EdgeInsets.only(
-                                            top: 36,
-                                          ),
-                                          child: Directionality(
-                                            textDirection: TextDirection.rtl,
-                                            child: MathMarkdown(
-                                              data: _flatText,
-                                              styleSheet: _buildMarkdownStyle(
-                                                theme,
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-
-                                        Positioned(
-                                          top: 0,
-                                          right: 0,
-                                          child: Tooltip(
-                                            message: isArabic ? 'نسخ' : 'Copy',
-                                            child: InkWell(
-                                              onTap: _copyToClipboard,
-                                              borderRadius:
-                                                  BorderRadius.circular(10),
-                                              child: Container(
-                                                padding: const EdgeInsets.all(
-                                                  7,
-                                                ),
-                                                decoration: BoxDecoration(
-                                                  color: const Color(
-                                                    0xFF6366F1,
-                                                  ).withOpacity(0.1),
-                                                  borderRadius:
-                                                      BorderRadius.circular(10),
-                                                  border: Border.all(
-                                                    color: const Color(
-                                                      0xFF6366F1,
-                                                    ).withOpacity(0.25),
-                                                  ),
-                                                ),
-                                                child: const Icon(
-                                                  Icons.copy_rounded,
-                                                  size: 16,
-                                                  color: Color(0xFF6366F1),
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
                             ),
-                          ],
+                          ),
                         ),
                       ),
-                    ),
 
-                    const SizedBox(height: 24),
-                  ],
+                      const SizedBox(height: 4),
+
+                      // ── Result card ──
+                      SlideTransition(
+                        position:
+                            Tween<Offset>(
+                              begin: const Offset(0, 0.25),
+                              end: Offset.zero,
+                            ).animate(
+                              CurvedAnimation(
+                                parent: _animationController,
+                                curve: Curves.easeOutCubic,
+                              ),
+                            ),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: theme.cardColor,
+                            borderRadius: BorderRadius.circular(24),
+                          ),
+                          margin: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 8,
+                          ),
+                          padding: const EdgeInsets.all(24),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(8),
+                                    decoration: BoxDecoration(
+                                      gradient: const LinearGradient(
+                                        colors: [
+                                          Color(0xFF6366F1),
+                                          Color(0xFF8B5CF6),
+                                        ],
+                                      ),
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: const Icon(
+                                      Icons.lightbulb_rounded,
+                                      color: Colors.white,
+                                      size: 20,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Text(
+                                    isArabic
+                                        ? 'نتيجة الشرح'
+                                        : 'Explanation Result',
+                                    style: theme.textTheme.titleLarge?.copyWith(
+                                      fontWeight: FontWeight.bold,
+                                      letterSpacing: -0.5,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 20),
+                              AnimatedContainer(
+                                duration: const Duration(milliseconds: 400),
+                                width: double.infinity,
+                                constraints: const BoxConstraints(
+                                  minHeight: 250,
+                                ),
+                                padding: const EdgeInsets.all(20),
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    colors: [
+                                      theme.scaffoldBackgroundColor,
+                                      theme.scaffoldBackgroundColor.withOpacity(
+                                        0.8,
+                                      ),
+                                    ],
+                                  ),
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(
+                                    color: const Color(
+                                      0xFF6366F1,
+                                    ).withOpacity(0.2),
+                                  ),
+                                ),
+                                child: _isLoading
+                                    ? Center(
+                                        child: Column(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          children: [
+                                            const SizedBox(
+                                              width: 50,
+                                              height: 50,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 3,
+                                                valueColor:
+                                                    AlwaysStoppedAnimation(
+                                                      Color(0xFF6366F1),
+                                                    ),
+                                              ),
+                                            ),
+                                            const SizedBox(height: 20),
+                                            Text(
+                                              isArabic
+                                                  ? 'جاري الشرح...'
+                                                  : 'Explaining your document...',
+                                              style: theme.textTheme.bodyMedium
+                                                  ?.copyWith(
+                                                    color: Colors.grey[600],
+                                                  ),
+                                            ),
+                                          ],
+                                        ),
+                                      )
+                                    : _chunks.isEmpty
+                                    ? Center(
+                                        child: Column(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          children: [
+                                            Icon(
+                                              Icons.lightbulb_outline_rounded,
+                                              size: 70,
+                                              color: Colors.grey[400],
+                                            ),
+                                            const SizedBox(height: 16),
+                                            Text(
+                                              isArabic
+                                                  ? 'انقر على "اشرحلي المستند" للبدء'
+                                                  : 'Click "Explain Document" to start',
+                                              style: theme.textTheme.titleMedium
+                                                  ?.copyWith(
+                                                    color: Colors.grey[500],
+                                                    fontWeight: FontWeight.w500,
+                                                  ),
+                                            ),
+                                          ],
+                                        ),
+                                      )
+                                    : Stack(
+                                        children: [
+                                          Padding(
+                                            padding: const EdgeInsets.only(
+                                              top: 36,
+                                            ),
+                                            child: Directionality(
+                                              textDirection: TextDirection.rtl,
+                                              child: MathMarkdown(
+                                                data: _flatText,
+                                                styleSheet: _buildMarkdownStyle(
+                                                  theme,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                          Positioned(
+                                            top: 0,
+                                            right: 0,
+                                            child: Tooltip(
+                                              message: isArabic
+                                                  ? 'نسخ'
+                                                  : 'Copy',
+                                              child: InkWell(
+                                                onTap: _copyToClipboard,
+                                                borderRadius:
+                                                    BorderRadius.circular(10),
+                                                child: Container(
+                                                  padding: const EdgeInsets.all(
+                                                    7,
+                                                  ),
+                                                  decoration: BoxDecoration(
+                                                    color: const Color(
+                                                      0xFF6366F1,
+                                                    ).withOpacity(0.1),
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          10,
+                                                        ),
+                                                    border: Border.all(
+                                                      color: const Color(
+                                                        0xFF6366F1,
+                                                      ).withOpacity(0.25),
+                                                    ),
+                                                  ),
+                                                  child: const Icon(
+                                                    Icons.copy_rounded,
+                                                    size: 16,
+                                                    color: Color(0xFF6366F1),
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+
+                      const SizedBox(height: 24),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -1152,6 +1341,7 @@ class _ExportOptionTile extends StatelessWidget {
   final String title;
   final String subtitle;
   final VoidCallback onTap;
+
   const _ExportOptionTile({
     required this.icon,
     required this.color,

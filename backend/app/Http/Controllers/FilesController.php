@@ -14,7 +14,7 @@ use Illuminate\Validation\Rule;
 
 class FilesController extends Controller
 {
-    const MARKER_URL    = 'https://climatological-yamileth-parliamentarily.ngrok-free.dev';
+    const MARKER_URL    = 'https://catapult-pang-rival.ngrok-free.dev';
     const MODEL_URL     = 'https://nuttiness-reattach-each.ngrok-free.dev';
     const NGROK_HEADERS = [
         'ngrok-skip-browser-warning' => 'true',
