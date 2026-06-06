@@ -136,6 +136,7 @@ class FilesController extends Controller
 
             if (!$response->successful()) {
                 $savedFile->update(['status' => 'ExtractionFailed']);
+                $savedFile->delete();
                 return response()->json([
                     'success' => false,  // ✅ غيّر
                     'message' => 'File saved but extraction failed',
@@ -181,6 +182,7 @@ class FilesController extends Controller
             }
 
             $savedFile->update(['status' => 'ExtractionFailed']);
+            $savedFile->delete();
             return response()->json([
                 'success' => false,  // ✅ غيّر
                 'message' => 'File saved but no job ID returned',
@@ -191,6 +193,7 @@ class FilesController extends Controller
         } catch (\Exception $e) {
             Log::error("Upload error for file {$savedFile->id}: " . $e->getMessage());
             $savedFile->update(['status' => 'ExtractionFailed']);
+            $savedFile->delete();
             return response()->json([
                 'success' => false,  // ✅ غيّر
                 'message' => 'File saved but extraction failed',
