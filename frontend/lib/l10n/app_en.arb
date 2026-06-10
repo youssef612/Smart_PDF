@@ -1,0 +1,138 @@
+{
+  "appTitle": "SmartPDF",
+  "greeting": "Hello!",
+  "changeLanguage": "Change Language",
+
+  "splashTitle": "SmartPDF",
+  "splashSubtitle": "Your AI PDF Assistant",
+  "version": "v1.0.0",
+
+  "summarize": "Summarize",
+  "summarizeDesc": "Get a concise summary of your PDF document",
+
+  "translate": "Translate",
+  "translateDesc": "Translate your PDF to any language",
+
+
+  "signInTitle": "Welcome Back",
+  "signInSubtitle": "Sign in to your account",
+  "email": "Email Address",
+  "password": "Password",
+  "forgotPassword": "Forgot Password?",
+  "dontHaveAccount": "Don't have an account?",
+  "signUp": "Sign Up",
+  "signInButton": "Sign In",
+
+  "signUpTitle": "Create Account",
+  "signUpSubtitle": "Sign up to get started",
+  "fullName": "Full Name",
+  "alreadyHaveAccount": "Already have an account?",
+  "createAccountButton": "Create Account",
+
+  "languageEnglish": "English",
+  "languageArabic": "Arabic",
+
+
+  "summaryTitle": "Summary",
+  "summaryFileName": "Research_Paper_2024.pdf",
+  "generateSummaryButton": "Generate Summary",
+  "generatingSummary": "Generating Summary...",
+  "summaryResult": "Summary Result",
+  "copy": "Copy",
+  "download": "Download",
+  "summaryParagraph1": "This research paper explores the application of artificial intelligence in document processing and analysis. The study focuses on three key areas: automated summarization, multilingual translation, and intelligent question generation.",
+  "summaryParagraph2": "The findings demonstrate that AI-powered tools can significantly reduce the time required for document analysis while maintaining high accuracy rates. The paper concludes with recommendations for future development in this field.",
+
+  "translationTitle": "Translation",
+  "selectLanguage": "Select Language",
+  "translating": "Translating...",
+  "translationResult": "Translation Result",
+  "downloadTranslation": "Download Translation",
+  "sampleTranslationEnglishArabic": "This is a sample translation of the document into Arabic.",
+  "sampleTranslationArabicEnglish": "This is a sample translation of the document.",
+  "sampleTranslationEnglishFrench": "This is a sample translation of the document into French.",
+
+  "questionsGeneratorTitle": "Questions Generator",
+  "questionsGeneratorSubtitle": "Generate questions from your PDF",
+  "questionType": "Question Type",
+  "difficultyLevel": "Difficulty Level",
+  "generateQuestions": "Generate Questions",
+  "generatingQuestions": "Generating Questions...",
+  "generatedQuestions": "Generated Questions",
+  "questionsBasedOnContent": "Questions based on your document content",
+  "multipleChoice": "Multiple Choice",
+  "trueFalse": "True/False",
+  "shortAnswer": "Short Answer",
+  "easy": "Easy",
+  "medium": "Medium",
+  "hard": "Hard",
+  "answer": "Answer",
+
+  "homeWelcome": "Welcome!",
+  "homeRecentFiles": "Recent Files",
+  "homeUploadPdf": "Upload New PDF",
+  "homeAiFeatures": "AI Features",
+
+  "signUpFullName": "Full Name",
+  "signUpEmail": "Email Address",
+  "signUpPassword": "Password",
+  "signUpButton": "Create Account",
+  "signUpHaveAccount": "Already have an account?",
+
+  "signInEmail": "Email Address",
+  "signInPassword": "Password",
+  "signInButtonText": "Sign In",
+  "signInForgotPassword": "Forgot Password?",
+  "signInNoAccount": "Don't have an account?",
+
+  "questionTypeMultiple": "Multiple Choice",
+  "questionTypeTrueFalse": "True/False",
+  "questionTypeShortAnswer": "Short Answer",
+  "difficultyEasy": "Easy",
+  "difficultyMedium": "Medium",
+  "difficultyHard": "Hard" ,
+
+
+  "appSubtitle": "Your AI PDF Assistant",
+  "signIn": "Sign In",
+  "continueWithoutAccount": "Continue Without Account",
+
+
+  "settings": "Settings",
+  "settingsSubtitle": "Customize your app experience",
+  "languageRegion": "Language & Region",
+  "chooseLanguage": "Choose your preferred language",
+  "appSettings": "App Settings",
+  "appSettingsSubtitle": "Customize how the app behaves",
+  "darkMode": "Dark Mode",
+  "darkModeDesc": "Switch to dark theme",
+  "notifications": "Notifications",
+  "notificationsDesc": "Receive app notifications",
+  "autoSave": "Auto Save",
+  "autoSaveDesc": "Automatically save your work" ,
+
+
+  "appName": "SmartPDF",
+  "home": "Home",
+  "uploadPdf": "Upload your PDF",
+  "uploadSubtitle": "Choose a PDF file to get started",
+  "uploadFile": "Upload File",
+  "readyToProcess": "Ready to process",
+  "aiFeatures": "AI Features",
+  "summary": "Summary",
+  "summaryDesc": "Get a concise summary of your PDF document",
+  "translation": "Translation",
+  "translationDesc": "Translate your PDF to any language",
+  "questions": "Questions",
+  "questionsDesc": "Generate questions from your content",
+  "recentFiles": "Recent Files",
+  "personalPage": "Personal Page",
+  "logout": "Logout" ,
+
+  "configuration": "Configuration" ,
+
+  "createAccount": "Create Account",
+  "signUpToStart": "Sign up to get started",
+  "alreadyAccount": "Already have an account?",
+  "emailAddress": "Email Address"
+}

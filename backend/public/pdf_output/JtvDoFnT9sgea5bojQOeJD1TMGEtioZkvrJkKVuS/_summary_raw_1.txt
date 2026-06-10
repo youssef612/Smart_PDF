@@ -1,0 +1,59 @@
+```json
+{
+  "pages": "page 1",
+  "main_topic": "Integral Equations",
+  "summary": "This document introduces integral equations, a class of equations where the unknown function is related to its integral. It discusses the classification of integral equations, their relationship to initial and boundary value problems, and existence/uniqueness theorems. The document also covers kernels of integral equations, including discontinuous kernels, and analytical methods for solving integral equations with continuous kernels, such as the degenerate kernel method, successive approximation method, and resolvent kernel method. Finally, it explores numerical methods for solving integral equations, including quadrature methods for Fredholm and Volterra integral equations.",
+  "key_concepts": [
+    {
+      "term": "Integral Equation",
+      "explanation": "An equation where the unknown function is related to its integral. This is a generalization of differential equations."
+    },
+    {
+      "term": "Kernel",
+      "explanation": "A function that determines the relationship between the unknown function and its integral. The kernel is the heart of an integral equation."
+    },
+    {
+      "term": "Initial Value Problem (IVP)",
+      "explanation": "A differential equation with initial conditions, specifying the value of the function and its derivative at a specific point."
+    },
+    {
+      "term": "Boundary Value Problem (BVP)",
+      "explanation": "A differential equation with boundary conditions, specifying the value of the function and its derivative at the endpoints of the interval."
+    }
+  ],
+  "theorems": [
+    {
+      "name": "Existence and Uniqueness Theorem for Integral Equations",
+      "statement": "If the kernel of an integral equation is continuous and satisfies certain conditions (e.g., boundedness, Lipschitz continuity), then the equation has a unique solution.",
+      "significance": "This theorem provides a guarantee that an integral equation has a unique solution under specific conditions, which is crucial for practical applications."
+    }
+  ],
+  "formulas": [
+    {
+      "formula": "F(x) = ∫[a, b] K(x, t) f(t) dt",
+      "variables": "F(x): Unknown function, a, b: Integration limits, K(x, t): Kernel function, f(t): Known function",
+      "usage": "This formula represents a general form of an integral equation, where the unknown function F(x) is expressed as an integral of the kernel K(x, t) times the known function f(t) over the interval [a, b]."
+    },
+    {
+      "formula": "K(x, t) = K(t, x)",
+      "variables": "K(x, t): Kernel function",
+      "usage": "This formula indicates that the kernel is symmetric, meaning that the kernel evaluated at (x, t) is the same as the kernel evaluated at (t, x)."
+    }
+  ],
+  "examples": [
+    {
+      "problem": "Solve the Fredholm integral equation of the first kind: F(x) = ∫[0, 1] K(x, t) f(t) dt, where K(x, t) = 1 - t^2.",
+      "approach": "The Degenerate Kernel Method can be applied.  The kernel is degenerate at x=0 and x=1.  The solution is F(x) = x(1-x).",
+      "result": "F(x) = x(1-x)"
+    }
+  ],
+  "methods": [
+    {
+      "name": "Degenerate Kernel Method",
+      "steps": "1.  Identify the degenerate points (where the kernel is zero). 2.  Construct a new kernel that is non-degenerate at these points. 3.  Solve the integral equation with the new kernel. 4.  Apply the solution to the original problem.",
+      "when_to_use": "When the kernel has degenerate points, where the integral is zero. This method is particularly useful for solving Fredholm integral equations of the first kind."
+    },
+    {
+      "name": "Successive Approximation Method",
+      "steps": "1.  Start with an initial guess for the solution. 2.  Iteratively improve the solution by applying the integral equation to the current approximation. 3.  Continue iterating until the solution converges.",
+      "when_to_use": "When the kernel is continuous and the integral equation is well-behaved. This method is often used for solving Volterra integral equations."

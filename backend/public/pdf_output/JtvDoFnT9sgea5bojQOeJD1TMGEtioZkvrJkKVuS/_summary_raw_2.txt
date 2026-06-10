@@ -1,0 +1,53 @@
+```json
+{
+  "pages": "page 2",
+  "main_topic": "Introduction to Integral Equations",
+  "summary": "Integral equations (IEs) are fundamental in various scientific and engineering disciplines, arising from both differential and integral formulations of physical problems. They are often used to model problems in areas like engineering, physics, chemistry, and biology. The purpose of this review is to provide a basic understanding of IEs, their relationship to differential equations, and methods for solving them. IEs are equations where the unknown function appears inside an integral. The most common type is the Volterra integral equation, which is of the form r(x)ϕ(x) = f(x) + λ∫α(x) to β(x) K(x, y)ϕ(y) dy, where r(x) is the kernel type, f(x) is the free term, λ is the parameter, and K(x, y) is the kernel function. IEs can be classified based on the linearity of the equation, which depends on the power of the function ϕ(x). The review will focus on different numerical methods for solving integral equations.",
+  "key_concepts": [
+    {
+      "term": "Integral Equation (IE)",
+      "explanation": "An equation where the unknown function appears inside an integral. The most common type is the Volterra integral equation, which is of the form r(x)ϕ(x) = f(x) + λ∫α(x) to β(x) K(x, y)ϕ(y) dy."
+    },
+    {
+      "term": "Volterra Integral Equation",
+      "explanation": "A specific type of integral equation where the unknown function appears inside an integral. It is of the form r(x)ϕ(x) = f(x) + λ∫α(x) to β(x) K(x, y)ϕ(y) dy."
+    },
+    {
+      "term": "Kernel Function (K(x, y))",
+      "explanation": "The function that appears inside the integral in a Volterra integral equation. It defines the relationship between the unknown function and the integration variable."
+    },
+    {
+      "term": "Free Term (f(x))",
+      "explanation": "The term that appears on the right-hand side of the Volterra integral equation, independent of the unknown function ϕ(x)."
+    },
+    {
+      "term": "Integral Equation Parameter (λ)",
+      "explanation": "A parameter that appears in the Volterra integral equation, often used to control the behavior of the solution."
+    },
+    {
+      "term": "Homogeneous Integral Equation",
+      "explanation": "An integral equation where the free term f(x) is zero."
+    },
+    {
+      "term": "Inhomogeneous Integral Equation",
+      "explanation": "An integral equation where the free term f(x) is not zero."
+    }
+  ],
+  "theorems": [
+    {
+      "name": "Volterra Integral Equation",
+      "statement": "r(x)ϕ(x) = f(x) + λ∫α(x) to β(x) K(x, y)ϕ(y) dy",
+      "significance": "This is the fundamental equation describing a Volterra integral equation, providing a framework for solving problems where the unknown function is related to a kernel function and a free term through an integral."
+    }
+  ],
+  "formulas": [
+    {
+      "formula": "r(x)ϕ(x) = f(x) + λ∫α(x) to β(x) K(x, y)ϕ(y) dy",
+      "variables": "r(x): Kernel type, ϕ(x): Unknown function, f(x): Free term, λ: Parameter, α(x): Lower limit of integration, β(x): Upper limit of integration, K(x, y): Kernel function",
+      "usage": "This formula is used to define and solve Volterra integral equations. The unknown function ϕ(x) is determined by solving for it in the equation."
+    }
+  ],
+  "examples": [
+    {
+      "problem": "Solve the Volterra integral equation of the first kind: r(x)ϕ(x) = f(x) + λ∫0 to x K(x, y)ϕ(y) dy",
+      "approach": "This can be solved using various numerical methods, such as the Galerkin method or the collocation method.",
