@@ -189,12 +189,10 @@ bool _isPureCodeLine(String line) {
 
   if (RegExp(r'^\$[A-Za-z_]\w*').hasMatch(trimmed)) return false;
 
-// [v22] Arabic ratio check — أكثر صرامة
-final arCount     = RegExp(r'[\u0600-\u06FF]').allMatches(trimmed).length;
-final letterCount = RegExp(r'[A-Za-z\u0600-\u06FF]').allMatches(trimmed).length;
-if (letterCount > 0 && arCount / letterCount > 0.25) return false;
-// [v22] لو فيه كلمة عربية واحدة على الأقل مع نص إنجليزي → مش code
-if (arCount >= 1 && RegExp(r'[A-Za-z]{2,}').hasMatch(trimmed)) return false;
+  final arCount     = RegExp(r'[\u0600-\u06FF]').allMatches(trimmed).length;
+  final letterCount = RegExp(r'[A-Za-z\u0600-\u06FF]').allMatches(trimmed).length;
+  if (letterCount > 0 && arCount / letterCount > 0.4) return false;
+
   // أرقام ضرب مش code
   if (RegExp(r'^\d+\s*[x×*]\s*\d+\s*=\s*\d+').hasMatch(trimmed)) return false;
   // output pattern مش code
@@ -218,19 +216,6 @@ if (arCount >= 1 && RegExp(r'[A-Za-z]{2,}').hasMatch(trimmed)) return false;
 // ─────────────────────────────────────────────────────────────
 
 String _normalizeDelimiters(String text) {
-  // [v23] إصلاح \frac{1}{n} اللي بيتقسم على سطرين
-  text = text.replaceAllMapped(
-    RegExp(r'^(\s*)(\d+)\s*\n(\s*)(=\s*[\d.+\-*/\s()\[\]]+)', multiLine: true),
-    (m) {
-      final num  = (m[2] ?? '').trim();
-      final expr = (m[4] ?? '').trim();
-      if (int.tryParse(num) != null && int.parse(num) < 10) {
-        return '${m[1]}\$\$\\frac{$num}{n} $expr\$\$\n';
-      }
-      return m[0] ?? '';
-    },
-  );
-
   text = text.replaceAll(
     RegExp(
       r'\\begin\{(?:table|figure)\}[\s\S]*?\\end\{(?:table|figure)\}',
@@ -240,29 +225,6 @@ String _normalizeDelimiters(String text) {
   );
   text = text.replaceAll(RegExp(r'\\(?:centering|caption|label)\{[^}]*\}'), '');
   text = text.replaceAll(RegExp(r'\\centering\b'), '');
-
-  // [v21] سطر بيبدأ بـ LaTeX command مباشرة من غير $$ → لفّه
-  text = text.replaceAllMapped(
-    RegExp(
-      r'^[ \t]*'
-      r'(\\(?:int|iint|iiint|oint|sum|prod|lim|sup|inf|'
-      r'frac|dfrac|tfrac|sqrt|binom|'
-      r'sin|cos|tan|cot|sec|csc|ln|log|exp|'
-      r'det|dim|ker|rank|'
-      r'vec|hat|bar|dot|ddot|tilde|overline|underline|widehat|widetilde|'
-      r'left|right|'
-      r'forall|exists|nabla|partial|'
-      r'alpha|beta|gamma|delta|epsilon|zeta|eta|theta|iota|kappa|'
-      r'lambda|mu|nu|xi|pi|rho|sigma|tau|upsilon|phi|chi|psi|omega|'
-      r'Gamma|Delta|Theta|Lambda|Xi|Pi|Sigma|Upsilon|Phi|Psi|Omega)'
-      r'\b.+)$',
-      multiLine: true,
-    ),
-    (m) {
-      final expr = (m[1] ?? '').trim();
-      return '\$\$$expr\$\$';
-    },
-  );
 
   text = text.replaceAllMapped(
     RegExp(r'\\\[([\s\S]+?)\\\]', multiLine: true),
@@ -288,9 +250,6 @@ String _normalizeDelimiters(String text) {
     (m) => '\$${(m[1] ?? '').trim()}\$',
   );
 
-  // [v21] تنظيف $$ المتكررة
-  text = text.replaceAll(RegExp(r'\$\$\s*\$\$([^\$]*)?\$\$\s*\$\$'), '\$\$\$1\$\$');
-
   text = text.replaceAllMapped(
     RegExp(r'\$\$([^$]*)\$\$'),
     (m) {
@@ -301,38 +260,12 @@ String _normalizeDelimiters(String text) {
 
   return text;
 }
+
 // ─────────────────────────────────────────────────────────────
 //  Bare math expressions auto-wrap
 // ─────────────────────────────────────────────────────────────
+
 String _normalizeBaremath(String text) {
-  // [v23] أنماط dP/dt و d²y/dx² و P(t) = expr
-  text = text.replaceAllMapped(
-    RegExp(
-      r'(?<!\$)(?<![`])\b'
-      r'(d(?:\^?\d+)?[A-Za-z]\/d[A-Za-z](?:\^?\d+)?'
-      r'|[A-Za-z]\([A-Za-z]\)\s*=\s*[A-Za-z0-9_\^{}\s]+)'
-      r'(?!\$)(?![`])',
-    ),
-    (m) => '\$${m[0]}\$',
-  );
-
-  // [v21] standalone LaTeX expressions
-  text = text.replaceAllMapped(
-    RegExp(
-      r'^(?!\s*\$\$)(\s*)(\\(?:int|iint|iiint|oint|sum|prod|lim|inf|sup|'
-      r'frac|dfrac|tfrac|sqrt|binom|left|right|'
-      r'sin|cos|tan|ln|log|exp|det|dim|ker|'
-      r'vec|hat|bar|dot|ddot|tilde|overline|underline)\b.*)',
-      multiLine: true,
-    ),
-    (m) {
-      final indent = m[1] ?? '';
-      final expr   = (m[2] ?? '').trim();
-      if (RegExp(r'[=]').hasMatch(expr)) return '${indent}\$\$$expr\$\$';
-      return '$indent\$\$$expr\$\$';
-    },
-  );
-
   text = text.replaceAllMapped(
     RegExp(r'(?<![`\$])\b(dy\/dx|df\/dx|dz\/dt)\b(?![`\$])'),
     (m) => '\$${m[0]}\$',
@@ -346,49 +279,27 @@ String _normalizeBaremath(String text) {
   );
   return text;
 }
+
 // ─────────────────────────────────────────────────────────────
 //  _semicolonToNewlines
 // ─────────────────────────────────────────────────────────────
-String _semicolonToNewlines(String code) {
-  // [v23] بدل فحص '\n' فقط، نفحص هل الكود
-  // محتاج splitting فعلاً (سطر واحد طويل أو semicolons كتير)
-  final trimmed = code.trim();
-  
-  // لو في \n بالفعل والكود منظم (كل ; عنده سطر جديد بعده) → ارجع
-  if (code.contains('\n')) {
-    final lines = code.split('\n').where((l) => l.trim().isNotEmpty).toList();
-    final avgLen = lines.isEmpty ? 0 : 
-        lines.map((l) => l.length).reduce((a, b) => a + b) / lines.length;
-    // لو الأسطر معقولة (< 80 حرف متوسط) → مش محتاج splitting
-    if (avgLen < 80) return code;
-  }
 
-  // [v23] محاولة regex أولاً للأنماط الشائعة قبل الـ char-by-char loop
+String _semicolonToNewlines(String code) {
+  if (code.contains('\n')) return code;
+
   String result = code;
 
-  // Java/C style: كسّر قبل keywords مهمة
   result = result.replaceAllMapped(
-    RegExp(r'(\})\s*(else\s*\{|else\s+if\s*\()'),
-    (m) => '${m[1]}\n${m[2]}',
+    RegExp(r'\)\s+(print\s*\(\s*\))'),
+    (m) => ')\n${m[1]}',
   );
   result = result.replaceAllMapped(
-    RegExp(r'(\))\s+(print\s*\(\s*\))'),
-    (m) => '${m[1]}\n${m[2]}',
-  );
-  result = result.replaceAllMapped(
-    RegExp(r'(\))\s+(print\s*\(|return\s+\w|for\s+\w|while\s+\w|if\s+\w|else:|def\s+\w|class\s+\w)'),
-    (m) => '${m[1]}\n${m[2]}',
+    RegExp(r'\)\s+(print\s*\(|return\s+\w|for\s+\w|while\s+\w|if\s+\w|else:|def\s+\w|class\s+\w)'),
+    (m) => ')\n${m[1]}',
   );
 
-  // [v23] لو الـ regex كفى والناتج منظم → ارجع
-  if (result.contains('\n')) {
-    final lines = result.split('\n').where((l) => l.trim().isNotEmpty).toList();
-    final avgLen = lines.isEmpty ? 0 :
-        lines.map((l) => l.length).reduce((a, b) => a + b) / lines.length;
-    if (avgLen < 80) return result;
-  }
+  if (result.contains('\n')) return result;
 
-  // [v23] char-by-char loop للباقي
   final lines       = <String>[];
   final buffer      = StringBuffer();
   int  depth        = 0;
@@ -423,29 +334,8 @@ String _semicolonToNewlines(String code) {
     if (ch == '(' || ch == '[') depth++;
     if (ch == ')' || ch == ']') { depth--; buffer.write(ch); continue; }
 
-    // [v23] كسّر بعد { مباشرة وزوّد indent
-    if (ch == '{' && depth == 0) {
-      buffer.write(ch);
-      flushLine();
-      indentLevel++;
-      if (i + 1 < result.length && result[i + 1] == ' ') i++;
-      continue;
-    }
-
-    // [v23] كسّر قبل } وقلل indent
-    if (ch == '}' && depth == 0) {
-      flushLine();
-      if (indentLevel > 0) indentLevel--;
-      buffer.write(ch);
-      flushLine();
-      if (i + 1 < result.length && result[i + 1] == ' ') i++;
-      continue;
-    }
-
-    if (ch == ';' && depth == 0) {
-      flushLine();
-      if (i + 1 < result.length && result[i + 1] == ' ') i++;
-      continue;
+    if (ch == ';' && depth == 0 && i + 1 < result.length && result[i + 1] == ' ') {
+      flushLine(); i++; continue;
     }
 
     if (ch == ':' && depth == 0 && i + 1 < result.length) {
@@ -469,6 +359,7 @@ String _semicolonToNewlines(String code) {
 // ─────────────────────────────────────────────────────────────
 //  _extractInlineCode
 // ─────────────────────────────────────────────────────────────
+
 String _extractInlineCode(String line) {
   if (line.trim().startsWith('```')) return line;
   if (RegExp(r'`[^`\n]+`').hasMatch(line)) return line;
@@ -499,23 +390,14 @@ String _extractInlineCode(String line) {
 
   String codePart = line.substring(codeStart).trim();
 
-  // [v23] فصل أقوى للشرح العربي عن الكود
   final arabicInCode = RegExp(r'[\u0600-\u06FF]').firstMatch(codePart);
   String? trailingExplanation;
-
   if (arabicInCode != null) {
     final beforeArabic = codePart.substring(0, arabicInCode.start);
     final afterArabic  = codePart.substring(arabicInCode.start);
-
-    final arCharCount = RegExp(r'[\u0600-\u06FF]')
-        .allMatches(afterArabic).length;
-
-    // [v23] لو في 3+ حروف عربية → ده شرح مش identifier
-    final arabicIsIdentifier = arCharCount < 3 &&
+    final arabicIsIdentifier =
         RegExp(r'[\w()\[\].,<>]+$').hasMatch(beforeArabic.trimRight()) &&
-        RegExp(r'^[\u0600-\u06FF_\w]+\s*[({;,)]')
-            .hasMatch(afterArabic.trimLeft());
-
+        RegExp(r'^[\u0600-\u06FF_\w]+\s*[({;,)]').hasMatch(afterArabic.trimLeft());
     if (!arabicIsIdentifier) {
       trailingExplanation = afterArabic.trim();
       codePart = beforeArabic.trim();
@@ -530,8 +412,7 @@ String _extractInlineCode(String line) {
   final lang  = _detectLang(codePart);
   final fence = '```$lang\n$codePart\n```';
   final label = arabicPart.isEmpty ? '' : '$arabicPart\n\n';
-  final explanation = (trailingExplanation != null &&
-      trailingExplanation.isNotEmpty)
+  final explanation = (trailingExplanation != null && trailingExplanation.isNotEmpty)
       ? '\n\n$trailingExplanation' : '';
 
   return '$label$fence$explanation';
@@ -547,7 +428,6 @@ String _wrapPureCodeBlocks(String text) {
   bool inFence     = false;
   bool inAutoBlock = false;
   int  braceDepth  = 0;
-  int  emptyCount  = 0;        // [v23] عدد الأسطر الفاضية المتراكمة
 
   for (int i = 0; i < lines.length; i++) {
     final line    = lines[i];
@@ -559,7 +439,6 @@ String _wrapPureCodeBlocks(String text) {
         result.add('```');
         inAutoBlock = false;
         braceDepth  = 0;
-        emptyCount  = 0;
       }
       inFence = !inFence;
       result.add(line);
@@ -575,54 +454,32 @@ String _wrapPureCodeBlocks(String text) {
     final isCode = _isPureCodeLine(line);
 
     if (isCode && !inAutoBlock) {
-      // [v23] لو كنا بنجمع أسطر فاضية قبل الكود → امسحها
       while (result.isNotEmpty && result.last.trim().isEmpty) result.removeLast();
       result.add('```${_detectLang(line)}');
       inAutoBlock = true;
       braceDepth += '{'.allMatches(line).length;
       braceDepth -= '}'.allMatches(line).length;
-      emptyCount  = 0;
       result.add(line);
-
-    } else if (inAutoBlock) {
-      if (isCode) {
-        // [v23] سطر كود جاي بعد أسطر فاضية → حط الأسطر الفاضية جوه الـ block
-        for (int e = 0; e < emptyCount; e++) result.add('');
-        emptyCount = 0;
+    } else if (!isCode && inAutoBlock) {
+      if (braceDepth > 0) {
         result.add(line);
-
       } else if (trimmed.isEmpty) {
-        // [v23] سطر فاضي → متقفلش الـ block فوراً، استنى السطر الجاي
-        emptyCount++;
-
-      } else if (braceDepth > 0) {
-        // جوه {} → فضل في الـ block
-        for (int e = 0; e < emptyCount; e++) result.add('');
-        emptyCount = 0;
-        result.add(line);
-
+        continue;
       } else {
-        // [v23] سطر مش كود ومش فاضي → قفل الـ block
         while (result.isNotEmpty && result.last.trim().isEmpty) result.removeLast();
         result.add('```');
         inAutoBlock = false;
         braceDepth  = 0;
-        emptyCount  = 0;
         result.add(line);
       }
-
     } else {
-      // [v23] برا أي block → flush الأسطر الفاضية المتراكمة عادي
-      emptyCount = 0;
       result.add(line);
     }
   }
-
   if (inAutoBlock) {
     while (result.isNotEmpty && result.last.trim().isEmpty) result.removeLast();
     result.add('```');
   }
-
   return result.join('\n');
 }
 
@@ -824,7 +681,7 @@ String _autoWrapPlainMath(String text) {
     final arCount = RegExp(r'[\u0600-\u06FF]').allMatches(trimmed).length;
     if (arCount > 4) { result.add(line); continue; }
 
-    // نمط: "= expr → y = val"
+    // [v20] نمط: "= expr → y = val"
     final arrowMathPattern = RegExp(
       r'^=\s*[\d\(\[\\][^→\n]*[→⟹]\s*\w+\s*=\s*[\d.]+\s*$',
     );
@@ -837,22 +694,15 @@ String _autoWrapPlainMath(String text) {
       caseSensitive: false,
     );
 
-    // [v22] نمط: pure arithmetic — يشمل:
-    //   • (a+b+c)/n = x/n = result
-    //   • a*b = result
-    //   • (expr) = result
-    // السطر ممكن يبدأ بـ ( أو رقم أو [
+    // نمط: pure arithmetic — يشمل multiple equals زي (23+28)/5 = 129/5 = 25.8
     final arithmeticPattern = RegExp(
-      r'^[\d\(\[/]'                          // يبدأ بـ رقم أو ( أو [ أو /
-      r'[\d+\-*/^.,\(\)\[\]/\s]+'            // محتوى العملية
-      r'(=\s*[\d\(\[/][\d+\-*/^.,\(\)\[\]/\s]*)*'  // = نتيجة (ممكن تتكرر)
-      r'[\d.]+\s*$',                         // ينتهي برقم
+      r'^[\d\(\[/][\d+\-*/^.,\(\)\[\]/\s]*(=\s*[\d\(\[/][\d+\-*/^.,\(\)\[\]/\s]*)+[\d.]+\s*$',
     );
 
     // نمط: superscripts/subscripts
     final superPattern = RegExp(r'\w+[\^_]\w+|\([^)]+\)\^2');
 
-    // [v22] نمط: "= رقم_عشري → letter = رقم_عشري"
+    // [v20] نمط: "= فاصلة_عشرية → letter = فاصلة_عشرية"
     final regressionArrowPattern = RegExp(
       r'^=\s*[\d.]+\s*[→⟹]\s*[a-zA-Z]\s*=\s*[\d.]+',
     );
@@ -1019,64 +869,19 @@ List<_Line> _mergeOrphanedLines(List<_Line> lines) {
 // ─────────────────────────────────────────────────────────────
 //  RTL/LTR detector
 // ─────────────────────────────────────────────────────────────
+
 TextDirection _detectDirection(String text) {
-  String clean = text;
-
-  // [v23] شيل code fences بالكامل
-  clean = clean.replaceAll(RegExp(r'```[\s\S]*?```', multiLine: true), '');
-  
-  // [v23] شيل inline code
-  clean = clean.replaceAll(RegExp(r'`[^`\n]+`'), '');
-  
-  // [v23] شيل block math
-  clean = clean.replaceAll(RegExp(r'\$\$[\s\S]*?\$\$', multiLine: true), '');
-  
-  // [v23] شيل inline math
-  clean = clean.replaceAll(RegExp(r'\$[^\$\n]{1,80}?\$'), '');
-  
-  // [v23] شيل LaTeX commands
-  clean = clean.replaceAll(RegExp(r'\\[a-zA-Z]+'), '');
-  clean = clean.replaceAll(RegExp(r'[{}^_]'), '');
-
-  // [v23] شيل URLs
-  clean = clean.replaceAll(RegExp(r'https?://\S+'), '');
-
-  // [v23] شيل programming keywords الشائعة
-  // دي بتبقى فاضية بعد ما نشيل الكود، بس لو فضلت في النص
-  clean = clean.replaceAll(
-    RegExp(
-      r'\b(for|while|if|else|return|print|printf|scanf|cout|cin|'
-      r'int|float|double|char|void|bool|string|'
-      r'function|const|let|var|import|export|require|'
-      r'class|def|lambda|async|await|'
-      r'public|private|protected|static|'
-      r'true|false|null|undefined|'
-      r'loop|inner|outer|table|array|index|length|size|'
-      r'new|delete|this|super|extends|implements|'
-      r'try|catch|finally|throw|'
-      r'SELECT|INSERT|UPDATE|DELETE|FROM|WHERE|JOIN)\b',
-      caseSensitive: false,
-    ),
-    '',
-  );
-
-  // [v23] شيل الأرقام والرموز البرمجية
-  clean = clean.replaceAll(RegExp(r'[\d+\-*/=<>!&|%^~@#]+'), '');
-  clean = clean.replaceAll(RegExp(r'[()[\]{};:,.]'), '');
-
-  // [v23] بعد كل الـ cleaning، احسب النسبة
+  final clean = text
+      .replaceAll(RegExp(r'```[\s\S]*?```'), '')
+      .replaceAll(RegExp(r'`[^`]+`'), '')
+      .replaceAll(RegExp(r'\$\$[\s\S]*?\$\$'), '')
+      .replaceAll(RegExp(r'\$[^\$\n]+?\$'), '');
   final arCount = RegExp(r'[\u0600-\u06FF]').allMatches(clean).length;
   final enCount = RegExp(r'[A-Za-z]').allMatches(clean).length;
-
-  // [v23] لو مفيش حروف خالص → LTR default
   if (arCount == 0 && enCount == 0) return TextDirection.ltr;
-
-  // [v23] رفعنا الـ threshold من 0.30 لـ 0.45
-  // عشان نكون أكيدين إن النص عربي فعلاً مش مجرد شرح مختلط
-  return (arCount / (arCount + enCount)) >= 0.45
-      ? TextDirection.rtl
-      : TextDirection.ltr;
+  return (arCount / (arCount + enCount)) >= 0.30 ? TextDirection.rtl : TextDirection.ltr;
 }
+
 // ─────────────────────────────────────────────────────────────
 //  MathMarkdown widget
 // ─────────────────────────────────────────────────────────────

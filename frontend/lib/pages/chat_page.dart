@@ -190,10 +190,12 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
       );
 
       if (response.data['success'] == true) {
+        final rawReply = response.data['data']['reply'] ?? '';
+        debugPrint('🔴 RAW LLM: $rawReply');
         setState(() {
           _messages.add({
             'role': 'assistant',
-            'content': response.data['data']['reply'] ?? '',
+            'content': rawReply,
           });
         });
       }

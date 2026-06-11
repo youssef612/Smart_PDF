@@ -18,7 +18,7 @@ class OtpVerificationPage extends StatefulWidget {
   final String? imageName;
 
   const OtpVerificationPage({
-    super.key,  // ✅ استخدام super parameter
+    super.key,
     required this.email,
     required this.name,
     required this.password,
@@ -124,7 +124,6 @@ class _OtpVerificationPageState extends State<OtpVerificationPage>
     });
 
     try {
-      // First verify OTP
       final verifyResponse = await _authService.verifyOtp(
         email: widget.email,
         otp: _otpCode,
@@ -134,7 +133,6 @@ class _OtpVerificationPageState extends State<OtpVerificationPage>
         throw Exception(verifyResponse['message'] ?? (isArabic ? 'رمز التحقق غير صحيح' : 'Invalid verification code'));
       }
 
-      // Then complete signup
       await _authService.signUp(
         name: widget.name,
         email: widget.email,
@@ -200,87 +198,83 @@ class _OtpVerificationPageState extends State<OtpVerificationPage>
       barrierDismissible: false,
       builder: (context) => Dialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
-        child: TweenAnimationBuilder(
-          tween: Tween<double>(begin: 0, end: 1),
-          duration: const Duration(milliseconds: 500),
-          builder: (context, double value, child) {
-            return Transform.scale(
-              scale: value,
-              child: Opacity(
-                opacity: value,
-                child: Container(
-                  padding: const EdgeInsets.all(24),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            colors: [Color(0xFF10B981), Color(0xFF34D399)],
-                          ),
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(
-                          Icons.check_rounded,
-                          color: Colors.white,
-                          size: 48,
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                      Text(
-                        isArabic ? 'تم التحقق بنجاح!' : 'Verification Successful!',
-                        style: const TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        isArabic
-                            ? 'تم إنشاء حسابك بنجاح'
-                            : 'Your account has been created successfully',
-                        style: TextStyle(
-                          color: Colors.grey[600],
-                          fontSize: 14,
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton(
-                          onPressed: () {
-                            Navigator.pop(context);
-                            Navigator.pushReplacement(
-                              context,
-                              PageTransition(
-                                child: const HomePage(),
-                                type: PageTransitionType.slideFromRight,
-                              ),
-                            );
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF10B981),
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                          ),
-                          child: Text(
-                            isArabic ? 'الذهاب إلى الرئيسية' : 'Go to Home',
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
+        insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 480),
+          child: ScaleTransition(
+            scale: CurvedAnimation(
+              parent: _animationController,
+              curve: Curves.easeOutBack,
+            ),
+            child: Container(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.green.withOpacity(0.1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.check_circle_rounded,
+                      color: Colors.green,
+                      size: 48,
+                    ),
                   ),
-                ),
+                  const SizedBox(height: 16),
+                  Text(
+                    isArabic ? 'تم التحقق بنجاح!' : 'Verification Successful!',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    isArabic
+                        ? 'تم إنشاء حسابك بنجاح'
+                        : 'Your account has been created successfully',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        Navigator.pushReplacement(
+                          context,
+                          PageTransition(
+                            child: const HomePage(),
+                            type: PageTransitionType.slideFromRight,
+                          ),
+                        );
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                      child: Text(
+                        isArabic ? 'الذهاب إلى الرئيسية' : 'Go to Home',
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            );
-          },
+            ),
+          ),
         ),
       ),
     );
@@ -357,7 +351,7 @@ class _OtpVerificationPageState extends State<OtpVerificationPage>
                             ),
                             boxShadow: [
                               BoxShadow(
-                                color: const Color(0xFF6366F1).withValues(alpha: 0.3), // ✅ استخدام withValues
+                                color: const Color(0xFF6366F1).withValues(alpha: 0.3),
                                 blurRadius: 20,
                                 offset: const Offset(0, 10),
                               ),
@@ -365,6 +359,13 @@ class _OtpVerificationPageState extends State<OtpVerificationPage>
                           ),
                           child: Stack(
                             children: [
+                              /// ✅ Particles - مباشرة جوا Stack
+                              Positioned.fill(
+                                child: IgnorePointer(
+                                  child: ParticlesLayer(count: 14),
+                                ),
+                              ),
+
                               /// Back button
                               Positioned(
                                 top: 20,
@@ -376,7 +377,7 @@ class _OtpVerificationPageState extends State<OtpVerificationPage>
                                     child: Container(
                                       padding: const EdgeInsets.all(10),
                                       decoration: BoxDecoration(
-                                        color: Colors.white.withValues(alpha: 0.2), // ✅ استخدام withValues
+                                        color: Colors.white.withValues(alpha: 0.2),
                                         shape: BoxShape.circle,
                                       ),
                                       child: const Icon(
@@ -396,11 +397,6 @@ class _OtpVerificationPageState extends State<OtpVerificationPage>
                                   child: Column(
                                     mainAxisAlignment: MainAxisAlignment.center,
                                     children: [
-                              Positioned.fill(
-                                child: IgnorePointer(
-                                  child: ParticlesLayer(count: 14),
-                                ),
-                              ),
                                       TweenAnimationBuilder(
                                         tween: Tween<double>(begin: 0, end: 1),
                                         duration: const Duration(milliseconds: 600),
@@ -410,7 +406,7 @@ class _OtpVerificationPageState extends State<OtpVerificationPage>
                                             child: Container(
                                               padding: const EdgeInsets.all(20),
                                               decoration: BoxDecoration(
-                                                color: Colors.white.withValues(alpha: 0.2), // ✅ استخدام withValues
+                                                color: Colors.white.withValues(alpha: 0.2),
                                                 shape: BoxShape.circle,
                                               ),
                                               child: const Icon(
@@ -441,7 +437,7 @@ class _OtpVerificationPageState extends State<OtpVerificationPage>
                                               : 'We have sent a verification code to your email',
                                           style: TextStyle(
                                             fontSize: 14,
-                                            color: Colors.white.withValues(alpha: 0.9), // ✅ استخدام withValues
+                                            color: Colors.white.withValues(alpha: 0.9),
                                           ),
                                           textAlign: TextAlign.center,
                                         ),
@@ -450,7 +446,7 @@ class _OtpVerificationPageState extends State<OtpVerificationPage>
                                       Container(
                                         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
                                         decoration: BoxDecoration(
-                                          color: Colors.white.withValues(alpha: 0.2), // ✅ استخدام withValues
+                                          color: Colors.white.withValues(alpha: 0.2),
                                           borderRadius: BorderRadius.circular(20),
                                         ),
                                         child: Text(
@@ -539,13 +535,13 @@ class _OtpVerificationPageState extends State<OtpVerificationPage>
                                           decoration: BoxDecoration(
                                             gradient: LinearGradient(
                                               colors: [
-                                                theme.colorScheme.primary.withValues(alpha: 0.1), // ✅ استخدام withValues
-                                                theme.colorScheme.primary.withValues(alpha: 0.05), // ✅ استخدام withValues
+                                                theme.colorScheme.primary.withValues(alpha: 0.1),
+                                                theme.colorScheme.primary.withValues(alpha: 0.05),
                                               ],
                                             ),
                                             borderRadius: BorderRadius.circular(16),
                                             border: Border.all(
-                                              color: theme.colorScheme.primary.withValues(alpha: 0.3), // ✅ استخدام withValues
+                                              color: theme.colorScheme.primary.withValues(alpha: 0.3),
                                             ),
                                           ),
                                           child: Row(
@@ -597,19 +593,19 @@ class _OtpVerificationPageState extends State<OtpVerificationPage>
                                               decoration: BoxDecoration(
                                                 gradient: _isLoading
                                                     ? LinearGradient(
-                                                      colors: [Colors.grey.shade400, Colors.grey.shade500],
-                                                    )
+                                                        colors: [Colors.grey.shade400, Colors.grey.shade500],
+                                                      )
                                                     : const LinearGradient(
-                                                      begin: Alignment.topLeft,
-                                                      end: Alignment.bottomRight,
-                                                      colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
-                                                    ),
+                                                        begin: Alignment.topLeft,
+                                                        end: Alignment.bottomRight,
+                                                        colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
+                                                      ),
                                                 borderRadius: BorderRadius.circular(20),
                                                 boxShadow: _isLoading
                                                     ? []
                                                     : [
                                                         BoxShadow(
-                                                          color: const Color(0xFF6366F1).withValues(alpha: 0.4), // ✅ استخدام withValues
+                                                          color: const Color(0xFF6366F1).withValues(alpha: 0.4),
                                                           blurRadius: 20,
                                                           offset: const Offset(0, 8),
                                                         ),
@@ -663,7 +659,7 @@ class _OtpVerificationPageState extends State<OtpVerificationPage>
                                     Text(
                                       isArabic ? 'لم تصلك رسالة؟' : "Didn't receive code?",
                                       style: TextStyle(
-                                        color: theme.textTheme.bodyMedium?.color?.withValues(alpha: 0.7), // ✅ استخدام withValues
+                                        color: theme.textTheme.bodyMedium?.color?.withValues(alpha: 0.7),
                                       ),
                                     ),
                                     const SizedBox(width: 8),
@@ -728,7 +724,7 @@ class _OtpVerificationPageState extends State<OtpVerificationPage>
                                     Text(
                                       isArabic ? 'تريد تسجيل الدخول؟' : 'Want to sign in?',
                                       style: TextStyle(
-                                        color: theme.textTheme.bodyMedium?.color?.withValues(alpha: 0.7), // ✅ استخدام withValues
+                                        color: theme.textTheme.bodyMedium?.color?.withValues(alpha: 0.7),
                                       ),
                                     ),
                                     TextButton(
@@ -787,7 +783,9 @@ class _OtpVerificationPageState extends State<OtpVerificationPage>
               borderRadius: BorderRadius.circular(16),
               boxShadow: [
                 BoxShadow(
-                  color: isDark ? Colors.black.withValues(alpha: 0.3) : Colors.black.withValues(alpha: 0.05), // ✅ استخدام withValues
+                  color: isDark
+                      ? Colors.black.withValues(alpha: 0.3)
+                      : Colors.black.withValues(alpha: 0.05),
                   blurRadius: 10,
                   offset: const Offset(0, 4),
                 ),
@@ -821,8 +819,7 @@ class _OtpVerificationPageState extends State<OtpVerificationPage>
                 } else if (value.isEmpty && index > 0) {
                   FocusScope.of(context).requestFocus(_otpFocusNodes[index - 1]);
                 }
-                
-                // Auto-verify when all fields are filled
+
                 if (index == 5 && value.isNotEmpty && _otpCode.length == 6) {
                   _verifyOtp();
                 }
@@ -834,4 +831,3 @@ class _OtpVerificationPageState extends State<OtpVerificationPage>
     );
   }
 }
-
