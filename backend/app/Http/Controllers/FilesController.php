@@ -14,8 +14,8 @@ use Illuminate\Validation\Rule;
 
 class FilesController extends Controller
 {
-    const MARKER_URL    = 'https://climatological-yamileth-parliamentarily.ngrok-free.dev';
-    const MODEL_URL     = 'https://nuttiness-reattach-each.ngrok-free.dev';
+const MARKER_URL = 'https://catapult-pang-rival.ngrok-free.dev';
+const MODEL_URL  = 'https://unsuppressive-rosily-shon.ngrok-free.dev';
     const NGROK_HEADERS = [
         'ngrok-skip-browser-warning' => 'true',
         'Accept'                     => 'application/json',
@@ -136,6 +136,7 @@ class FilesController extends Controller
 
             if (!$response->successful()) {
                 $savedFile->update(['status' => 'ExtractionFailed']);
+                $savedFile->delete();
                 return response()->json([
                     'success' => false,  // ✅ غيّر
                     'message' => 'File saved but extraction failed',
@@ -181,6 +182,7 @@ class FilesController extends Controller
             }
 
             $savedFile->update(['status' => 'ExtractionFailed']);
+            $savedFile->delete();
             return response()->json([
                 'success' => false,  // ✅ غيّر
                 'message' => 'File saved but no job ID returned',
@@ -191,6 +193,7 @@ class FilesController extends Controller
         } catch (\Exception $e) {
             Log::error("Upload error for file {$savedFile->id}: " . $e->getMessage());
             $savedFile->update(['status' => 'ExtractionFailed']);
+            $savedFile->delete();
             return response()->json([
                 'success' => false,  // ✅ غيّر
                 'message' => 'File saved but extraction failed',
@@ -702,14 +705,14 @@ class FilesController extends Controller
 
         $lang       = $this->detectLanguage($userMessage);
         $promptText = $this->buildChatPrompt($lang, '', $historyText, $userMessage);
-        $reply      = $this->callModelWithRetry($promptText, 'chat', 0.5);
+        $reply      = $this->callModelWithRetry($promptText, 'chat', 0.6);
 
         if ($reply === null) {
             return response()->json(['success' => false, 'message' => 'Model failed to reply.'], 500);
         }
 
         return response()->json(['success' => true, 'data' => ['reply' => $reply]]);
-}
+    }
 
     public function chat(Request $request, $id)
     {
@@ -739,7 +742,7 @@ class FilesController extends Controller
         $contextSnippet = mb_substr($this->cleanText($context), 0, 1500);
         $lang           = $this->detectLanguage($userMessage . ' ' . $contextSnippet);
         $promptText     = $this->buildChatPrompt($lang, $contextSnippet, $historyText, $userMessage);
-        $reply          = $this->callModelWithRetry($promptText, 'chat', 0.5);
+        $reply          = $this->callModelWithRetry($promptText, 'chat', 0.6);
 
         if ($reply === null) {
             return response()->json(['success' => false, 'message' => 'Model failed to reply.'], 500);
@@ -993,32 +996,16 @@ class FilesController extends Controller
     // ────────────────────────────────────────────────────────
     private function buildChatPrompt(string $language, string $context, string $history, string $userMessage): string
     {
-        $langInstruction = match ($language) {
-            'arabic'  => 'Reply in Arabic only.',
-            'english' => 'Reply in English only.',
-            default   => "Reply in the same language as the user's message.",
-        };
-
         $contextBlock = $context
             ? "DOCUMENT CONTEXT (use this to answer):\n{$context}\n\n"
             : '';
 
-        $historyBlock = $history
-            ? "CONVERSATION HISTORY:\n{$history}\n"
-            : '';
-
-        return <<<PROMPT
-You are a helpful AI assistant answering questions about a document.
-{$langInstruction}
-Use LaTeX for any math: inline \$...\$, block \$\$...\$\$.
-Keep answers concise and accurate.
-
-{$contextBlock}{$historyBlock}User: {$userMessage}
-Assistant:
-PROMPT;
+        return $this->prompt('chat', [
+            'timestamp' => now()->timestamp,
+            'history'   => $history,
+            'message'   => $contextBlock . $userMessage,
+        ]);
     }
-
-    // ────────────────────────────────────────────────────────
     //  buildMindMapPrompt
     // ────────────────────────────────────────────────────────
     private function buildMindMapPrompt(string $text, string $lang): string
@@ -1981,4 +1968,3 @@ INST,
             ?? "TYPE RULES: Generate {$type} questions directly from source text with clear answers.";
     }
 }
-

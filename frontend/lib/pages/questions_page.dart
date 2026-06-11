@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'chat_page.dart';
 import 'widgets/interactive_scale.dart';
+import 'package:dio/dio.dart';
 
 import 'package:flutter/services.dart';
 import '../utils/responsive.dart';
@@ -14,8 +15,10 @@ import 'widgets/word_export.dart';
 import '../l10n/app_localizations.dart';
 import '../services/api_service.dart';
 import '../services/history_store.dart';
+import 'package:project_flutter/services/files_service.dart';
 import 'exam_models.dart';
 import 'exam_page.dart';
+import 'home_page.dart';
 
 export 'exam_models.dart';
 export 'exam_page.dart';
@@ -313,6 +316,7 @@ class QuestionsPage extends StatefulWidget {
   final String? difficulty;
   final int? fromPage;
   final int? toPage;
+  final FilesService filesService;
 
   const QuestionsPage({
     Key? key,
@@ -324,6 +328,7 @@ class QuestionsPage extends StatefulWidget {
     this.difficulty,
     this.fromPage,
     this.toPage,
+    required this.filesService,
   }) : super(key: key);
 
   @override
@@ -340,15 +345,25 @@ class _QuestionsPageState extends State<QuestionsPage>
 
   bool _isGenerating = false;
   List<Map<String, String>> _generatedQuestions = [];
+
+  String? _activeFileName;
+  String? _activeFileId;
+
   int? _selectedFromPage;
   int? _selectedToPage;
   int _totalPages = 0;
+
+  final TextEditingController _fromController = TextEditingController();
+  final TextEditingController _toController = TextEditingController();
+
   late String _currentLanguage;
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
   late Animation<Offset> _slideAnimation;
 
   final ApiService _apiService = ApiService();
+
+  CancelToken? _cancelToken;
 
   final List<Map<String, dynamic>> _difficulties = [
     {'value': 'easy', 'label': 'easy', 'color': const Color(0xFF10B981)},
@@ -376,6 +391,9 @@ class _QuestionsPageState extends State<QuestionsPage>
   void initState() {
     super.initState();
 
+    // تهيئة البيانات النشطة من الـ widget الممرر ابتدائياً
+    _activeFileName = widget.fileName;
+    _activeFileId = widget.fileId;
     _totalPages = widget.pageCount;
 
     // ── page range محفوظة من history ──
@@ -435,66 +453,260 @@ class _QuestionsPageState extends State<QuestionsPage>
     return reverseMap[mapped] ?? mapped;
   }
 
+  // ── ميزة تبديل الملف النشط مباشرة من داخل شاشة الأسئلة ──
+  Future<void> _changeActiveFile() async {
+    if (_isGenerating) {
+      _showErrorSnackBar(
+        isArabic
+            ? 'برجاء الانتظار حتى ينتهي إنشاء الأسئلة الحالية'
+            : 'Please wait until the current questions generation is complete',
+      );
+      return;
+    }
+
+    await showDialog(
+      context: context,
+      builder: (dialogContext) => FilePickerDialog(
+        filesService: widget.filesService,
+        isArabic: isArabic,
+        currentFileId: _activeFileId,
+        onFileSelected: (fileId, fileName, pageCount) {
+          setState(() {
+            // 1. تحديث بيانات الملف النشط الجديد
+            _activeFileId = fileId;
+            _activeFileName = fileName;
+            _totalPages = pageCount;
+
+            // 2. إعادة تعيين الخيارات للشكل الافتراضي تماماً
+            _selectedQuestionType =
+                'multiple'; // النوع الافتراضي (اختيار من متعدد)
+            _selectedDifficulty = 'medium'; // المستوى الافتراضي (متوسط)
+            _questionCount = 5; // العدد الافتراضي
+
+            // 3. تصفير نطاق الصفحات والأسئلة القديمة بنظافة
+            _selectedFromPage = 1;
+            _selectedToPage = pageCount > 0 ? pageCount : 1;
+            _generatedQuestions = [];
+          });
+        },
+        onFileUploaded: (fileId, fileName, pageCount, isProcessing) {
+          setState(() {
+            // 1. تحديث بيانات الملف النشط الجديد
+            _activeFileId = fileId;
+            _activeFileName = fileName;
+            _totalPages = pageCount;
+
+            // 2. إعادة تعيين الخيارات للشكل الافتراضي تماماً
+            _selectedQuestionType = 'multiple';
+            _selectedDifficulty = 'medium';
+            _questionCount = 5;
+
+            // 3. تصفير نطاق الصفحات والأسئلة القديمة بنظافة
+            _selectedFromPage = 1;
+            _selectedToPage = pageCount > 0 ? pageCount : 1;
+            _generatedQuestions = [];
+          });
+        },
+        onUploadStart: () => ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              isArabic ? 'جاري بدء الرفع...' : 'Starting upload...',
+            ),
+          ),
+        ),
+        onError: (msg) {
+          if (msg.startsWith('__JUST_SAVED_SUCCESS__')) {
+            final savedName = msg.split(':')[1];
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  isArabic
+                      ? '$savedName تم حفظه بنجاح'
+                      : '$savedName saved successfully',
+                ),
+                backgroundColor: Colors.green,
+              ),
+            );
+          } else {
+            _showErrorSnackBar(msg);
+          }
+        },
+      ),
+    );
+  }
+
+  // ── دالة الحماية والتحقق التنبيهي لمنع المغادرة المفاجئة ──
+  Future<bool> _onWillPop() async {
+    if (!_isGenerating) return true;
+
+    final bool? shouldCancel = await showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            const Icon(
+              Icons.warning_amber_rounded,
+              color: Colors.orange,
+              size: 26,
+            ),
+            const SizedBox(width: 10),
+            Text(
+              isArabic ? 'تنبيه: جاري التحميل' : 'Warning: Generating',
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+            ),
+          ],
+        ),
+        content: Text(
+          isArabic
+              ? 'هل أنت متأكد من مغادرة الشاشة؟ سيؤدي ذلك إلى إلغاء عملية إنشاء الأسئلة الحالية.'
+              : 'Are you sure you want to leave? This will cancel the current questions generation.',
+          style: TextStyle(color: Colors.grey[600], fontSize: 14, height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx, false),
+            child: Text(
+              isArabic ? 'تابع الانتظار' : 'Keep Waiting',
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+            onPressed: () {
+              // 🔒 إلغاء الـ Request من السيرفر فوراً في الخلفية
+              if (_cancelToken != null && !_cancelToken!.isCancelled) {
+                _cancelToken!.cancel(
+                  isArabic
+                      ? 'تم إلغاء العملية بواسطة المستخدم'
+                      : 'Cancelled by user',
+                );
+              }
+              Navigator.pop(dialogCtx, true); // اخرج بأمان
+            },
+            child: Text(isArabic ? 'إلغاء ومغادرة' : 'Cancel & Leave'),
+          ),
+        ],
+      ),
+    );
+
+    return shouldCancel ?? false;
+  }
+
   Future<void> _showPageRangeDialog() async {
     int fromPage = _selectedFromPage ?? 1;
     int toPage = _selectedToPage ?? (_totalPages > 0 ? _totalPages : 1);
+
+    // تهيئة النص داخل الـ Controllers قبل فتح الديالوج مباشرة
+    _fromController.text = '$fromPage';
+    _toController.text = '$toPage';
 
     final result = await showDialog<Map<String, int>>(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setStateDialog) => AlertDialog(
-          title: Text(isArabic ? 'اختر نطاق الصفحات' : 'Select Page Range'),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
+          title: Text(
+            isArabic
+                ? 'اختر نطاق الصفحات للأسئلة'
+                : 'Select Page Range for Questions',
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                _totalPages > 0
-                    ? '${isArabic ? 'إجمالي الصفحات' : 'Total pages'}: $_totalPages'
-                    : (isArabic
-                          ? 'تعذر تحديد عدد الصفحات'
-                          : 'Page count unavailable'),
-                style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  color: _totalPages > 0 ? Color(0xFF6366F1) : Colors.orange,
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF6366F1).withOpacity(0.06),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  _totalPages > 0
+                      ? '${isArabic ? 'إجمالي صفحات المستند' : 'Total document pages'}: $_totalPages'
+                      : (isArabic
+                            ? 'تعذر تحديد عدد الصفحات'
+                            : 'Page count unavailable'),
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                    color: _totalPages > 0
+                        ? const Color(0xFF6366F1)
+                        : Colors.orange,
+                  ),
                 ),
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 24),
 
-              // ── من الصفحة ──
+              // ── سطر من الصفحة ──
               Text(
                 isArabic ? 'من الصفحة' : 'From Page',
-                style: const TextStyle(fontWeight: FontWeight.w600),
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 15,
+                ),
               ),
               const SizedBox(height: 8),
               _buildPageCounter(
                 value: fromPage,
                 min: 1,
-                max: toPage,
+                max: toPage, // حماية السهم العلوي
+                controller: _fromController,
+                onChanged: (val) => fromPage = val,
                 onDecrement: () => setStateDialog(() {
-                  if (fromPage > 1) fromPage--;
+                  if (fromPage > 1) {
+                    fromPage--;
+                    _fromController.text = '$fromPage';
+                  }
                 }),
                 onIncrement: () => setStateDialog(() {
-                  if (fromPage < toPage) fromPage++;
+                  if (fromPage < toPage) {
+                    fromPage++;
+                    _fromController.text = '$fromPage';
+                  }
                 }),
               ),
 
-              const SizedBox(height: 16),
+              const SizedBox(height: 20),
 
-              // ── إلى الصفحة ──
+              // ── سطر إلى الصفحة ──
               Text(
                 isArabic ? 'إلى الصفحة' : 'To Page',
-                style: const TextStyle(fontWeight: FontWeight.w600),
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 15,
+                ),
               ),
               const SizedBox(height: 8),
               _buildPageCounter(
                 value: toPage,
-                min: fromPage,
+                min: fromPage, // حماية السهم السفلي
                 max: _totalPages > 0 ? _totalPages : 9999,
+                controller: _toController,
+                onChanged: (val) => toPage = val,
                 onDecrement: () => setStateDialog(() {
-                  if (toPage > fromPage) toPage--;
+                  if (toPage > fromPage) {
+                    toPage--;
+                    _toController.text = '$toPage';
+                  }
                 }),
                 onIncrement: () => setStateDialog(() {
-                  if (_totalPages == 0 || toPage < _totalPages) toPage++;
+                  if (_totalPages == 0 || toPage < _totalPages) {
+                    toPage++;
+                    _toController.text = '$toPage';
+                  }
                 }),
               ),
             ],
@@ -505,8 +717,44 @@ class _QuestionsPageState extends State<QuestionsPage>
               child: Text(isArabic ? 'إلغاء' : 'Cancel'),
             ),
             ElevatedButton(
-              onPressed: () =>
-                  Navigator.pop(context, {'from': fromPage, 'to': toPage}),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF6366F1),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 12,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+              onPressed: () {
+                // الفحص الذكي النهائي للمدخلات المكتوبة يدوياً عبر الكيبورد
+                int finalFrom = int.tryParse(_fromController.text) ?? fromPage;
+                int finalTo = int.tryParse(_toController.text) ?? toPage;
+
+                if (finalFrom < 1 ||
+                    (_totalPages > 0 && finalFrom > _totalPages)) {
+                  _showErrorSnackBar(
+                    isArabic
+                        ? 'رقم بداية الصفحة غير صحيح! يجب أن يكون بين 1 و $_totalPages'
+                        : 'Invalid start page! Must be between 1 and $_totalPages',
+                  );
+                  return;
+                }
+
+                if (finalTo < finalFrom ||
+                    (_totalPages > 0 && finalTo > _totalPages)) {
+                  _showErrorSnackBar(
+                    isArabic
+                        ? 'رقم نهاية الصفحة غير صحيح أو أقل من صفحة البداية!'
+                        : 'Invalid end page or less than start page!',
+                  );
+                  return;
+                }
+
+                Navigator.pop(context, {'from': finalFrom, 'to': finalTo});
+              },
               child: Text(isArabic ? 'توليد' : 'Generate'),
             ),
           ],
@@ -528,37 +776,66 @@ class _QuestionsPageState extends State<QuestionsPage>
     required int value,
     required int min,
     required int max,
+    required TextEditingController controller,
+    required ValueChanged<int> onChanged,
     required VoidCallback onDecrement,
     required VoidCallback onIncrement,
   }) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
+        // زر الناقص (-) الجانبي باللون الأزرق المعتاد
         IconButton(
           onPressed: value > min ? onDecrement : null,
           icon: const Icon(Icons.remove_circle_outline_rounded),
           color: const Color(0xFF6366F1),
           iconSize: 28,
         ),
+
+        // الحاوية المتدرجة الأنيقة التي بداخلها الحقل الشفاف للكتابة
         Container(
-          width: 70,
-          padding: const EdgeInsets.symmetric(vertical: 8),
+          width: 80,
+          padding: const EdgeInsets.symmetric(vertical: 4),
           decoration: BoxDecoration(
             gradient: const LinearGradient(
               colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
             ),
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF6366F1).withOpacity(0.25),
+                blurRadius: 8,
+                offset: const Offset(0, 4),
+              ),
+            ],
           ),
-          child: Text(
-            '$value',
+          child: TextField(
+            controller: controller,
+            keyboardType: TextInputType.number,
             textAlign: TextAlign.center,
+            cursorColor: Colors.white,
+            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
             style: const TextStyle(
               color: Colors.white,
               fontWeight: FontWeight.bold,
               fontSize: 20,
             ),
+            decoration: const InputDecoration(
+              border: InputBorder.none,
+              isDense: true,
+              contentPadding: EdgeInsets.symmetric(vertical: 8),
+            ),
+            onChanged: (text) {
+              if (text.isEmpty) return;
+              int? parsed = int.tryParse(text);
+              if (parsed != null) {
+                onChanged(parsed); // تحديث القيمة منطقياً في الخلفية فوراً
+              }
+            },
           ),
         ),
+
+        // زر الزائد (+) الجانبي
         IconButton(
           onPressed: (_totalPages == 0 || value < max) ? onIncrement : null,
           icon: const Icon(Icons.add_circle_outline_rounded),
@@ -572,6 +849,8 @@ class _QuestionsPageState extends State<QuestionsPage>
   @override
   void dispose() {
     _animationController.dispose();
+    _fromController.dispose();
+    _toController.dispose();
     super.dispose();
   }
 
@@ -849,23 +1128,33 @@ class _QuestionsPageState extends State<QuestionsPage>
     int attempt = 0;
     while (attempt < maxRetries) {
       try {
+        _cancelToken = CancelToken();
+
         final response = await _apiService.dio.post(
-          '/files/${widget.fileId}/questions',
+          '/files/$_activeFileId/questions',
+          cancelToken: _cancelToken,
           data: {
             'type': mapType(_selectedQuestionType),
             'difficulty': _selectedDifficulty.toLowerCase(),
             'count': _questionCount,
             'force_regenerate': true,
             'seed': DateTime.now().millisecondsSinceEpoch,
+            if (fromPage != null) 'from_page': fromPage,
+            if (toPage != null) 'to_page': toPage,
           },
         );
         if (response.data['success'] == true) {
           final raw = response.data['data']['questions'];
-          print('RAW QUESTIONS:\n$raw');
-
           if (raw is String && raw.trim().isNotEmpty) return raw;
         }
+      } on DioException catch (e) {
+        // 🛑 لقطة ذكية: لو المستخدم لغى بنفسه، ارمي الإيرور برة فوراً عشان نوقف الـ محاولات الـ الـ 3
+        if (CancelToken.isCancel(e)) {
+          rethrow;
+        }
+        // لو إيرور تاني (زي الـ 500 اللي في اللوج)، سيبه يكمل الـ Retry عادي
       } catch (_) {}
+
       attempt++;
       if (attempt < maxRetries) {
         await Future.delayed(const Duration(milliseconds: 600));
@@ -878,7 +1167,7 @@ class _QuestionsPageState extends State<QuestionsPage>
     if (_isGenerating) return;
     if (!mounted) return;
 
-    if (widget.fileId == null) {
+    if (_activeFileId == null) {
       _showErrorSnackBar(isArabic ? 'لم يتم اختيار ملف' : 'No file selected');
       return;
     }
@@ -922,10 +1211,10 @@ class _QuestionsPageState extends State<QuestionsPage>
       _animationController.reset();
       _animationController.forward();
 
-      if (widget.fileId != null && parsed.isNotEmpty) {
+      if (_activeFileId != null && parsed.isNotEmpty) {
         await HistoryStore.add({
-          'file_id': widget.fileId,
-          'file_name': widget.fileName ?? '',
+          'file_id': _activeFileId, // ← التعديل هنا
+          'file_name': _activeFileName ?? '', // ← التعديل هنا
           'type': 'questions',
           'question_type': _selectedQuestionType,
           'difficulty': _selectedDifficulty,
@@ -962,6 +1251,17 @@ class _QuestionsPageState extends State<QuestionsPage>
           duration: const Duration(seconds: 2),
         ),
       );
+    } on DioException catch (e) {
+      if (!mounted) return;
+      setState(() => _isGenerating = false);
+
+      // لو الإلغاء مقصود، اخرج وماتطلعش SnackBar حمراء تبوظ الـ UX
+      if (CancelToken.isCancel(e)) {
+        debugPrint('Request cancelled cleanly from state.');
+        return;
+      }
+
+      _showErrorSnackBar(isArabic ? 'حدث خطأ في الاتصال' : 'Connection error');
     } catch (e) {
       if (!mounted) return;
       setState(() => _isGenerating = false);
@@ -1146,533 +1446,256 @@ class _QuestionsPageState extends State<QuestionsPage>
       textDirection: isArabic ? TextDirection.rtl : TextDirection.ltr,
       child: CallbackShortcuts(
         bindings: {
-          const SingleActivator(LogicalKeyboardKey.escape): () {
-            if (Navigator.canPop(context)) Navigator.pop(context);
+          const SingleActivator(LogicalKeyboardKey.escape): () async {
+            // تحسين الـ Shortcut ليمر بنفس حماية الـ PopScope
+            final shouldPop = await _onWillPop();
+            if (shouldPop && context.mounted) {
+              if (Navigator.canPop(context)) Navigator.pop(context);
+            }
           },
         },
         child: Focus(
           autofocus: true,
-          child: Scaffold(
-            backgroundColor: theme.scaffoldBackgroundColor,
-            appBar: AppBar(
-              title: Text(
-                loc.questionsGeneratorTitle,
-                style: const TextStyle(fontWeight: FontWeight.w600),
-              ),
-              elevation: 0,
-              backgroundColor: theme.cardColor,
-              actions: [
-                if (widget.fileId != null)
-                  IconButton(
-                    onPressed: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => ChatPage(
-                          fileId: widget.fileId!,
-                          fileName: widget.fileName ?? "",
+          // ── حماية الشاشة من الخروج المفاجئ أثناء التوليد ──
+          child: PopScope(
+            canPop:
+                !_isGenerating, // يسمح بالخروج التلقائي فقط لو مش شغال توليد
+            onPopInvokedWithResult: (didPop, result) async {
+              if (didPop) return;
+              final shouldPop = await _onWillPop();
+              if (shouldPop && context.mounted) {
+                Navigator.pop(context);
+              }
+            },
+            child: Scaffold(
+              backgroundColor: theme.scaffoldBackgroundColor,
+              appBar: AppBar(
+                title: Text(
+                  loc.questionsGeneratorTitle,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                elevation: 0,
+                backgroundColor: theme.cardColor,
+                actions: [
+                  if (_activeFileId != null)
+                    IconButton(
+                      onPressed: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => ChatPage(
+                            fileId: _activeFileId!,
+                            fileName: _activeFileName ?? "",
+                          ),
                         ),
                       ),
+                      icon: const Icon(Icons.lightbulb_rounded),
+                      color: const Color(0xFFFBBF24),
+                      tooltip: isArabic ? 'الشات الذكي' : 'Smart Chat',
+                    ), // ← تأكد من قفلة القوس هنا
+                  if (_generatedQuestions.isNotEmpty)
+                    IconButton(
+                      onPressed: _showExportSheet,
+                      icon: const Icon(Icons.ios_share_rounded),
+                      color: const Color(0xFF6366F1),
+                      tooltip: isArabic ? 'تصدير' : 'Export',
                     ),
-                    icon: const Icon(Icons.lightbulb_rounded),
-                    color: const Color(0xFFFBBF24),
-                    tooltip: isArabic ? 'الشات الذكي' : 'Smart Chat',
-                  ),
-                if (_generatedQuestions.isNotEmpty)
-                  IconButton(
-                    onPressed: _showExportSheet,
-                    icon: const Icon(Icons.ios_share_rounded),
-                    color: const Color(0xFF6366F1),
-                    tooltip: isArabic ? 'تصدير' : 'Export',
-                  ),
-                Padding(
-                  padding: const EdgeInsets.only(right: 12),
-                  child: Stack(
-                    alignment: Alignment.topRight,
-                    children: [
-                      TextButton.icon(
-                        onPressed: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => ExamPage(isArabic: isArabic),
-                          ),
-                        ).then((_) => setState(() {})),
-                        icon: const Icon(
-                          Icons.assignment_rounded,
-                          size: 18,
-                          color: Color(0xFFF59E0B),
-                        ),
-                        label: Text(
-                          isArabic ? 'الامتحان' : 'Exam',
-                          style: const TextStyle(
+                  Padding(
+                    padding: const EdgeInsets.only(right: 12, left: 12),
+                    child: Stack(
+                      alignment: Alignment.topRight,
+                      children: [
+                        TextButton.icon(
+                          onPressed: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => ExamPage(isArabic: isArabic),
+                            ),
+                          ).then((_) => setState(() {})),
+                          icon: const Icon(
+                            Icons.assignment_rounded,
+                            size: 18,
                             color: Color(0xFFF59E0B),
-                            fontWeight: FontWeight.w600,
+                          ),
+                          label: Text(
+                            isArabic ? 'الامتحان' : 'Exam',
+                            style: const TextStyle(
+                              color: Color(0xFFF59E0B),
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          style: TextButton.styleFrom(
+                            backgroundColor: const Color(
+                              0xFFF59E0B,
+                            ).withOpacity(0.1),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(20),
+                            ),
                           ),
                         ),
-                        style: TextButton.styleFrom(
-                          backgroundColor: const Color(
-                            0xFFF59E0B,
-                          ).withOpacity(0.1),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                        ),
-                      ),
-                      if (ExamStore.questions.isNotEmpty)
-                        Positioned(
-                          top: 4,
-                          right: 4,
-                          child: Container(
-                            padding: const EdgeInsets.all(4),
-                            decoration: const BoxDecoration(
-                              color: Color(0xFFEF4444),
-                              shape: BoxShape.circle,
-                            ),
-                            constraints: const BoxConstraints(
-                              minWidth: 18,
-                              minHeight: 18,
-                            ),
-                            child: Text(
-                              '${ExamStore.questions.length}',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
+                        if (ExamStore.questions.isNotEmpty)
+                          Positioned(
+                            top: 4,
+                            right: 4,
+                            child: Container(
+                              padding: const EdgeInsets.all(4),
+                              decoration: const BoxDecoration(
+                                color: Color(0xFFEF4444),
+                                shape: BoxShape.circle,
                               ),
-                              textAlign: TextAlign.center,
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            body: Center(
-              child: ConstrainedBox(
-                constraints: BoxConstraints(
-                  maxWidth: Responsive.maxWidth(context),
-                ),
-                child: SingleChildScrollView(
-                  physics: const BouncingScrollPhysics(),
-                  child: Column(
-                    children: [
-                      // ── Header ──
-                      FadeTransition(
-                        opacity: _fadeAnimation,
-                        child: Container(
-                          width: double.infinity,
-                          decoration: BoxDecoration(
-                            color: theme.cardColor,
-                            borderRadius: const BorderRadius.only(
-                              bottomLeft: Radius.circular(32),
-                              bottomRight: Radius.circular(32),
-                            ),
-                          ),
-                          padding: const EdgeInsets.fromLTRB(24, 32, 24, 32),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                loc.questionsGeneratorTitle,
-                                style: theme.textTheme.headlineMedium?.copyWith(
+                              constraints: const BoxConstraints(
+                                minWidth: 18,
+                                minHeight: 18,
+                              ),
+                              child: Text(
+                                '${ExamStore.questions.length}',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 10,
                                   fontWeight: FontWeight.bold,
-                                  letterSpacing: -0.5,
                                 ),
+                                textAlign: TextAlign.center,
                               ),
-                              const SizedBox(height: 8),
-                              Text(
-                                isArabic
-                                    ? 'أنشئ أسئلة ذكية من مستنداتك'
-                                    : 'Generate smart questions from your documents',
-                                style: theme.textTheme.bodyMedium?.copyWith(
-                                  color: Colors.grey[600],
-                                ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              body: Center(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxWidth: Responsive.maxWidth(context),
+                  ),
+                  child: SingleChildScrollView(
+                    physics: const BouncingScrollPhysics(),
+                    child: Column(
+                      children: [
+                        // ── Header ──
+                        FadeTransition(
+                          opacity: _fadeAnimation,
+                          child: Container(
+                            width: double.infinity,
+                            decoration: BoxDecoration(
+                              color: theme.cardColor,
+                              borderRadius: const BorderRadius.only(
+                                bottomLeft: Radius.circular(32),
+                                bottomRight: Radius.circular(32),
                               ),
-                              const SizedBox(height: 20),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                  vertical: 12,
+                            ),
+                            padding: const EdgeInsets.fromLTRB(24, 32, 24, 32),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  loc.questionsGeneratorTitle,
+                                  style: theme.textTheme.headlineMedium
+                                      ?.copyWith(
+                                        fontWeight: FontWeight.bold,
+                                        letterSpacing: -0.5,
+                                      ),
                                 ),
-                                decoration: BoxDecoration(
-                                  gradient: LinearGradient(
-                                    colors: [
-                                      const Color(0xFF6366F1).withOpacity(0.1),
-                                      const Color(0xFF8B5CF6).withOpacity(0.05),
-                                    ],
-                                  ),
-                                  borderRadius: BorderRadius.circular(16),
-                                  border: Border.all(
-                                    color: const Color(
-                                      0xFF6366F1,
-                                    ).withOpacity(0.2),
+                                const SizedBox(height: 8),
+                                Text(
+                                  isArabic
+                                      ? 'أنشئ أسئلة ذكية من مستنداتك'
+                                      : 'Generate smart questions from your documents',
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    color: Colors.grey[600],
                                   ),
                                 ),
-                                child: Row(
-                                  children: [
-                                    Container(
-                                      padding: const EdgeInsets.all(8),
+                                const SizedBox(height: 20),
+                                // ── كارت الملف التفاعلي لتبديل الملف بلمسة واحدة ──
+                                GestureDetector(
+                                  onTap: _changeActiveFile,
+                                  child: MouseRegion(
+                                    cursor: _isGenerating
+                                        ? SystemMouseCursors.basic
+                                        : SystemMouseCursors.click,
+                                    child: AnimatedContainer(
+                                      duration: const Duration(
+                                        milliseconds: 200,
+                                      ),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 16,
+                                        vertical: 12,
+                                      ),
                                       decoration: BoxDecoration(
-                                        color: const Color(
-                                          0xFF6366F1,
-                                        ).withOpacity(0.2),
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                      child: const Icon(
-                                        Icons.description_rounded,
-                                        color: Color(0xFF6366F1),
-                                        size: 20,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: Text(
-                                        widget.fileName ??
-                                            (isArabic
-                                                ? 'لم يتم اختيار ملف'
-                                                : 'No file selected'),
-                                        style: theme.textTheme.bodyMedium
-                                            ?.copyWith(
-                                              fontWeight: FontWeight.w500,
-                                              letterSpacing: -0.3,
-                                            ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-
-                      const SizedBox(height: 12),
-
-                      // ── Configuration Card ──
-                      SlideTransition(
-                        position: _slideAnimation,
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: theme.cardColor,
-                            borderRadius: BorderRadius.circular(24),
-                          ),
-                          margin: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 8,
-                          ),
-                          padding: const EdgeInsets.all(24),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Container(
-                                    padding: const EdgeInsets.all(8),
-                                    decoration: BoxDecoration(
-                                      gradient: const LinearGradient(
-                                        colors: [
-                                          Color(0xFF6366F1),
-                                          Color(0xFF8B5CF6),
-                                        ],
-                                      ),
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    child: const Icon(
-                                      Icons.tune_rounded,
-                                      color: Colors.white,
-                                      size: 20,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Text(
-                                    loc.configuration,
-                                    style: theme.textTheme.titleLarge?.copyWith(
-                                      fontWeight: FontWeight.bold,
-                                      letterSpacing: -0.5,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 24),
-
-                              // Question Type
-                              Text(
-                                loc.questionType,
-                                style: theme.textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                  letterSpacing: -0.3,
-                                ),
-                              ),
-                              const SizedBox(height: 12),
-                              GestureDetector(
-                                onTap: _showTypeDropdown,
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 16,
-                                    vertical: 14,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: const Color(
-                                      0xFF6366F1,
-                                    ).withOpacity(0.06),
-                                    borderRadius: BorderRadius.circular(16),
-                                    border: Border.all(
-                                      color: const Color(
-                                        0xFF6366F1,
-                                      ).withOpacity(0.35),
-                                      width: 1.5,
-                                    ),
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      Container(
-                                        padding: const EdgeInsets.all(7),
-                                        decoration: BoxDecoration(
+                                        gradient: LinearGradient(
+                                          colors: [
+                                            const Color(
+                                              0xFF6366F1,
+                                            ).withOpacity(0.12),
+                                            const Color(
+                                              0xFF8B5CF6,
+                                            ).withOpacity(0.06),
+                                          ],
+                                        ),
+                                        borderRadius: BorderRadius.circular(16),
+                                        border: Border.all(
                                           color: const Color(
                                             0xFF6366F1,
-                                          ).withOpacity(0.12),
-                                          borderRadius: BorderRadius.circular(
-                                            10,
-                                          ),
-                                        ),
-                                        child: Icon(
-                                          _selectedTypeIcon,
-                                          size: 18,
-                                          color: const Color(0xFF6366F1),
+                                          ).withOpacity(0.35),
+                                          width: 1.2,
                                         ),
                                       ),
-                                      const SizedBox(width: 12),
-                                      Expanded(
-                                        child: Text(
-                                          _selectedTypeLabel,
-                                          style: const TextStyle(
-                                            color: Color(0xFF6366F1),
-                                            fontWeight: FontWeight.w600,
-                                            fontSize: 15,
-                                          ),
-                                        ),
-                                      ),
-                                      const Icon(
-                                        Icons.keyboard_arrow_down_rounded,
-                                        color: Color(0xFF6366F1),
-                                        size: 22,
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-
-                              const SizedBox(height: 28),
-
-                              // Difficulty
-                              Text(
-                                loc.difficultyLevel,
-                                style: theme.textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                  letterSpacing: -0.3,
-                                ),
-                              ),
-                              const SizedBox(height: 12),
-                              Wrap(
-                                spacing: 12,
-                                children: _difficulties.map((d) {
-                                  return _buildDifficultyChip(
-                                    theme: theme,
-                                    label: locByKey(loc, d['value'] as String),
-                                    value: d['value'] as String,
-                                    groupValue: _selectedDifficulty,
-                                    color: d['color'] as Color,
-                                    onSelected: (val) => setState(
-                                      () => _selectedDifficulty = val,
-                                    ),
-                                  );
-                                }).toList(),
-                              ),
-
-                              const SizedBox(height: 28),
-
-                              // Count
-                              Text(
-                                isArabic
-                                    ? 'عدد الأسئلة'
-                                    : 'Number of Questions',
-                                style: theme.textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                  letterSpacing: -0.3,
-                                ),
-                              ),
-                              const SizedBox(height: 16),
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  _buildCounterBtn(
-                                    icon: Icons.remove_rounded,
-                                    onTap: () {
-                                      if (_questionCount > 1)
-                                        setState(() => _questionCount--);
-                                    },
-                                    enabled: _questionCount > 1,
-                                    theme: theme,
-                                  ),
-                                  const SizedBox(width: 20),
-                                  Container(
-                                    width: 80,
-                                    padding: const EdgeInsets.symmetric(
-                                      vertical: 10,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      gradient: const LinearGradient(
-                                        colors: [
-                                          Color(0xFF6366F1),
-                                          Color(0xFF8B5CF6),
-                                        ],
-                                      ),
-                                      borderRadius: BorderRadius.circular(16),
-                                    ),
-                                    child: Text(
-                                      '$_questionCount',
-                                      textAlign: TextAlign.center,
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 22,
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 20),
-                                  _buildCounterBtn(
-                                    icon: Icons.add_rounded,
-                                    onTap: () {
-                                      if (_questionCount < _maxQuestions)
-                                        setState(() => _questionCount++);
-                                    },
-                                    enabled: _questionCount < _maxQuestions,
-                                    theme: theme,
-                                  ),
-                                ],
-                              ),
-                              if (_questionCount >= _maxQuestions)
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 8),
-                                  child: Center(
-                                    child: Text(
-                                      isArabic
-                                          ? 'الحد الأقصى $_maxQuestions سؤال'
-                                          : 'Maximum $_maxQuestions questions',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: Colors.grey[500],
-                                      ),
-                                    ),
-                                  ),
-                                ),
-
-                              const SizedBox(height: 32),
-
-                              // Generate Button
-                              InteractiveScale(
-                                onTap: _isGenerating
-                                    ? null
-                                    : () async {
-                                        await _showPageRangeDialog();
-                                      },
-                                child: SizedBox(
-                                  width: double.infinity,
-                                  child: AnimatedContainer(
-                                    duration: const Duration(milliseconds: 300),
-                                    padding: const EdgeInsets.symmetric(
-                                      vertical: 16,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      gradient: _isGenerating
-                                          ? LinearGradient(
-                                              colors: [
-                                                Colors.grey.shade400,
-                                                Colors.grey.shade500,
-                                              ],
-                                            )
-                                          : const LinearGradient(
-                                              begin: Alignment.topLeft,
-                                              end: Alignment.bottomRight,
-                                              colors: [
-                                                Color(0xFF6366F1),
-                                                Color(0xFF8B5CF6),
-                                              ],
+                                      child: Row(
+                                        children: [
+                                          Container(
+                                            padding: const EdgeInsets.all(8),
+                                            decoration: BoxDecoration(
+                                              color: const Color(
+                                                0xFF6366F1,
+                                              ).withOpacity(0.2),
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
                                             ),
-                                      borderRadius: BorderRadius.circular(20),
-                                      boxShadow: _isGenerating
-                                          ? []
-                                          : [
-                                              BoxShadow(
-                                                color: const Color(
-                                                  0xFF6366F1,
-                                                ).withOpacity(0.4),
-                                                blurRadius: 15,
-                                                offset: const Offset(0, 8),
-                                              ),
-                                            ],
-                                    ),
-                                    child: Row(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.center,
-                                      children: [
-                                        if (_isGenerating)
-                                          const SizedBox(
-                                            width: 22,
-                                            height: 22,
-                                            child: CircularProgressIndicator(
-                                              strokeWidth: 2.5,
-                                              valueColor:
-                                                  AlwaysStoppedAnimation(
-                                                    Colors.white,
+                                            child: const Icon(
+                                              Icons.description_rounded,
+                                              color: Color(0xFF6366F1),
+                                              size: 20,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 12),
+                                          Expanded(
+                                            child: Text(
+                                              _activeFileName ??
+                                                  (isArabic
+                                                      ? 'لم يتم اختيار ملف'
+                                                      : 'No file selected'),
+                                              style: theme.textTheme.bodyMedium
+                                                  ?.copyWith(
+                                                    fontWeight: FontWeight.bold,
+                                                    letterSpacing: -0.3,
                                                   ),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
                                             ),
-                                          )
-                                        else
-                                          const Icon(
-                                            Icons.auto_awesome_rounded,
-                                            color: Colors.white,
+                                          ),
+                                          // أيقونة التبديل لإعلام المستخدم بإمكانية الضغط
+                                          Icon(
+                                            Icons
+                                                .swap_horizontal_circle_outlined,
+                                            color: const Color(
+                                              0xFF6366F1,
+                                            ).withOpacity(0.7),
                                             size: 22,
                                           ),
-                                        const SizedBox(width: 10),
-                                        Text(
-                                          _isGenerating
-                                              ? loc.generatingQuestions
-                                              : loc.generateQuestions,
-                                          style: const TextStyle(
-                                            fontSize: 16,
-                                            fontWeight: FontWeight.w600,
-                                            color: Colors.white,
-                                            letterSpacing: -0.3,
-                                          ),
-                                        ),
-                                      ],
+                                        ],
+                                      ),
                                     ),
                                   ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
-                      ),
 
-                      const SizedBox(height: 12),
+                        const SizedBox(height: 12),
 
-                      // ── Generated Questions ──
-                      if (_generatedQuestions.isNotEmpty || _isGenerating)
+                        // ── Configuration Card ──
                         SlideTransition(
-                          position:
-                              Tween<Offset>(
-                                begin: const Offset(0, 0.3),
-                                end: Offset.zero,
-                              ).animate(
-                                CurvedAnimation(
-                                  parent: _animationController,
-                                  curve: Curves.easeOutCubic,
-                                ),
-                              ),
+                          position: _slideAnimation,
                           child: Container(
                             decoration: BoxDecoration(
                               color: theme.cardColor,
@@ -1693,183 +1716,513 @@ class _QuestionsPageState extends State<QuestionsPage>
                                       decoration: BoxDecoration(
                                         gradient: const LinearGradient(
                                           colors: [
-                                            Color(0xFFF59E0B),
-                                            Color(0xFFFBBF24),
+                                            Color(0xFF6366F1),
+                                            Color(0xFF8B5CF6),
                                           ],
                                         ),
                                         borderRadius: BorderRadius.circular(12),
                                       ),
                                       child: const Icon(
-                                        Icons.quiz_rounded,
+                                        Icons.tune_rounded,
                                         color: Colors.white,
                                         size: 20,
                                       ),
                                     ),
                                     const SizedBox(width: 12),
                                     Text(
-                                      loc.generatedQuestions,
+                                      loc.configuration,
                                       style: theme.textTheme.titleLarge
                                           ?.copyWith(
                                             fontWeight: FontWeight.bold,
                                             letterSpacing: -0.5,
                                           ),
                                     ),
-                                    const Spacer(),
-                                    if (!_isGenerating &&
-                                        _generatedQuestions.isNotEmpty)
-                                      TextButton.icon(
-                                        onPressed: () {
-                                          for (final q in _generatedQuestions) {
-                                            ExamStore.addQuestion(
-                                              ExamQuestion(
-                                                id:
-                                                    DateTime.now()
-                                                        .millisecondsSinceEpoch
-                                                        .toString() +
-                                                    (q['question'] ?? '')
-                                                        .hashCode
-                                                        .toString(),
-                                                question: q['question'] ?? '',
-                                                answer: q['answer'] ?? '',
-                                                type: q['type'] ?? '',
-                                                difficulty:
-                                                    q['difficulty'] ?? '',
-                                              ),
-                                            );
-                                          }
-                                          setState(() {});
-                                          ScaffoldMessenger.of(
-                                            context,
-                                          ).showSnackBar(
-                                            SnackBar(
-                                              content: Row(
-                                                children: [
-                                                  const Icon(
-                                                    Icons
-                                                        .assignment_turned_in_rounded,
-                                                    color: Colors.white,
-                                                    size: 20,
-                                                  ),
-                                                  const SizedBox(width: 12),
-                                                  Text(
-                                                    isArabic
-                                                        ? 'تمت إضافة الكل للامتحان'
-                                                        : 'All added to exam',
-                                                  ),
-                                                ],
-                                              ),
-                                              backgroundColor: const Color(
-                                                0xFFF59E0B,
-                                              ),
-                                              behavior:
-                                                  SnackBarBehavior.floating,
-                                              shape: RoundedRectangleBorder(
-                                                borderRadius:
-                                                    BorderRadius.circular(12),
-                                              ),
-                                              duration: const Duration(
-                                                seconds: 2,
-                                              ),
-                                            ),
-                                          );
-                                        },
-                                        icon: const Icon(
-                                          Icons.playlist_add_rounded,
-                                          size: 16,
-                                          color: Color(0xFFF59E0B),
-                                        ),
-                                        label: Text(
-                                          isArabic ? 'إضافة الكل' : 'Add all',
-                                          style: const TextStyle(
-                                            fontSize: 12,
-                                            color: Color(0xFFF59E0B),
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                        style: TextButton.styleFrom(
-                                          backgroundColor: const Color(
-                                            0xFFF59E0B,
-                                          ).withOpacity(0.1),
-                                          shape: RoundedRectangleBorder(
-                                            borderRadius: BorderRadius.circular(
-                                              12,
-                                            ),
-                                          ),
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 10,
-                                            vertical: 6,
-                                          ),
-                                        ),
-                                      ),
                                   ],
                                 ),
-                                const SizedBox(height: 8),
+                                const SizedBox(height: 24),
+
+                                // Question Type
                                 Text(
-                                  loc.questionsBasedOnContent,
-                                  style: theme.textTheme.bodyMedium?.copyWith(
-                                    color: Colors.grey[600],
+                                  loc.questionType,
+                                  style: theme.textTheme.titleMedium?.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                    letterSpacing: -0.3,
                                   ),
                                 ),
-                                const SizedBox(height: 24),
-                                if (_isGenerating)
-                                  const Center(
-                                    child: Padding(
-                                      padding: EdgeInsets.all(24),
-                                      child: CircularProgressIndicator(),
+                                const SizedBox(height: 12),
+                                GestureDetector(
+                                  onTap: _showTypeDropdown,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 14,
                                     ),
-                                  )
-                                else
-                                  ..._generatedQuestions.map(
-                                    (question) => QuestionItem(
-                                      theme: theme,
-                                      question: question['question'] ?? '',
-                                      answer: question['answer'] ?? '',
-                                      rawType: question['type'] ?? '',
-                                      rawDifficulty:
-                                          question['difficulty'] ?? '',
-                                      typeLabel: locByKey(
-                                        loc,
-                                        question['type'] ?? '',
+                                    decoration: BoxDecoration(
+                                      color: const Color(
+                                        0xFF6366F1,
+                                      ).withOpacity(0.06),
+                                      borderRadius: BorderRadius.circular(16),
+                                      border: Border.all(
+                                        color: const Color(
+                                          0xFF6366F1,
+                                        ).withOpacity(0.35),
+                                        width: 1.5,
                                       ),
-                                      difficultyLabel: locByKey(
-                                        loc,
-                                        question['difficulty'] ?? '',
-                                      ),
-                                      loc: loc,
-                                      markdownStyle: _buildMarkdownStyle(theme),
-                                      onAddToExam: () {
-                                        ExamStore.addQuestion(
-                                          ExamQuestion(
-                                            id:
-                                                DateTime.now()
-                                                    .millisecondsSinceEpoch
-                                                    .toString() +
-                                                (question['question'] ?? '')
-                                                    .hashCode
-                                                    .toString(),
-                                            question:
-                                                question['question'] ?? '',
-                                            answer: question['answer'] ?? '',
-                                            type: question['type'] ?? '',
-                                            difficulty:
-                                                question['difficulty'] ?? '',
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.all(7),
+                                          decoration: BoxDecoration(
+                                            color: const Color(
+                                              0xFF6366F1,
+                                            ).withOpacity(0.12),
+                                            borderRadius: BorderRadius.circular(
+                                              10,
+                                            ),
                                           ),
-                                        );
-                                        setState(() {});
-                                      },
-                                      isInExam: ExamStore.containsNormalized(
-                                        question['question'] ?? '',
-                                      ),
-                                      isArabic: isArabic,
+                                          child: Icon(
+                                            _selectedTypeIcon,
+                                            size: 18,
+                                            color: const Color(0xFF6366F1),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Text(
+                                            _selectedTypeLabel,
+                                            style: const TextStyle(
+                                              color: Color(0xFF6366F1),
+                                              fontWeight: FontWeight.w600,
+                                              fontSize: 15,
+                                            ),
+                                          ),
+                                        ),
+                                        const Icon(
+                                          Icons.keyboard_arrow_down_rounded,
+                                          color: Color(0xFF6366F1),
+                                          size: 22,
+                                        ),
+                                      ],
                                     ),
                                   ),
+                                ),
+
+                                const SizedBox(height: 28),
+
+                                // Difficulty
+                                Text(
+                                  loc.difficultyLevel,
+                                  style: theme.textTheme.titleMedium?.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                    letterSpacing: -0.3,
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                                Wrap(
+                                  spacing: 12,
+                                  children: _difficulties.map((d) {
+                                    return _buildDifficultyChip(
+                                      theme: theme,
+                                      label: locByKey(
+                                        loc,
+                                        d['value'] as String,
+                                      ),
+                                      value: d['value'] as String,
+                                      groupValue: _selectedDifficulty,
+                                      color: d['color'] as Color,
+                                      onSelected: (val) => setState(
+                                        () => _selectedDifficulty = val,
+                                      ),
+                                    );
+                                  }).toList(),
+                                ),
+
+                                const SizedBox(height: 28),
+
+                                // Count
+                                Text(
+                                  isArabic
+                                      ? 'عدد الأسئلة'
+                                      : 'Number of Questions',
+                                  style: theme.textTheme.titleMedium?.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                    letterSpacing: -0.3,
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    _buildCounterBtn(
+                                      icon: Icons.remove_rounded,
+                                      onTap: () {
+                                        if (_questionCount > 1)
+                                          setState(() => _questionCount--);
+                                      },
+                                      enabled: _questionCount > 1,
+                                      theme: theme,
+                                    ),
+                                    const SizedBox(width: 20),
+                                    Container(
+                                      width: 80,
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 10,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        gradient: const LinearGradient(
+                                          colors: [
+                                            Color(0xFF6366F1),
+                                            Color(0xFF8B5CF6),
+                                          ],
+                                        ),
+                                        borderRadius: BorderRadius.circular(16),
+                                      ),
+                                      child: Text(
+                                        '$_questionCount',
+                                        textAlign: TextAlign.center,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 22,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 20),
+                                    _buildCounterBtn(
+                                      icon: Icons.add_rounded,
+                                      onTap: () {
+                                        if (_questionCount < _maxQuestions)
+                                          setState(() => _questionCount++);
+                                      },
+                                      enabled: _questionCount < _maxQuestions,
+                                      theme: theme,
+                                    ),
+                                  ],
+                                ),
+                                if (_questionCount >= _maxQuestions)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 8),
+                                    child: Center(
+                                      child: Text(
+                                        isArabic
+                                            ? 'الحد الأقصى $_maxQuestions سؤال'
+                                            : 'Maximum $_maxQuestions questions',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.grey[500],
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+
+                                const SizedBox(height: 32),
+
+                                // Generate Button
+                                InteractiveScale(
+                                  onTap: _isGenerating
+                                      ? null
+                                      : () async {
+                                          await _showPageRangeDialog();
+                                        },
+                                  child: SizedBox(
+                                    width: double.infinity,
+                                    child: AnimatedContainer(
+                                      duration: const Duration(
+                                        milliseconds: 300,
+                                      ),
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 16,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        gradient: _isGenerating
+                                            ? LinearGradient(
+                                                colors: [
+                                                  Colors.grey.shade400,
+                                                  Colors.grey.shade500,
+                                                ],
+                                              )
+                                            : const LinearGradient(
+                                                begin: Alignment.topLeft,
+                                                end: Alignment.bottomRight,
+                                                colors: [
+                                                  Color(0xFF6366F1),
+                                                  Color(0xFF8B5CF6),
+                                                ],
+                                              ),
+                                        borderRadius: BorderRadius.circular(20),
+                                        boxShadow: _isGenerating
+                                            ? []
+                                            : [
+                                                BoxShadow(
+                                                  color: const Color(
+                                                    0xFF6366F1,
+                                                  ).withOpacity(0.4),
+                                                  blurRadius: 15,
+                                                  offset: const Offset(0, 8),
+                                                ),
+                                              ],
+                                      ),
+                                      child: Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        children: [
+                                          if (_isGenerating)
+                                            const SizedBox(
+                                              width: 22,
+                                              height: 22,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2.5,
+                                                valueColor:
+                                                    AlwaysStoppedAnimation(
+                                                      Colors.white,
+                                                    ),
+                                              ),
+                                            )
+                                          else
+                                            const Icon(
+                                              Icons.auto_awesome_rounded,
+                                              color: Colors.white,
+                                              size: 22,
+                                            ),
+                                          const SizedBox(width: 10),
+                                          Text(
+                                            _isGenerating
+                                                ? loc.generatingQuestions
+                                                : loc.generateQuestions,
+                                            style: const TextStyle(
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.w600,
+                                              color: Colors.white,
+                                              letterSpacing: -0.3,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
                               ],
                             ),
                           ),
                         ),
 
-                      const SizedBox(height: 16),
-                    ],
+                        const SizedBox(height: 12),
+
+                        // ── Generated Questions ──
+                        if (_generatedQuestions.isNotEmpty || _isGenerating)
+                          SlideTransition(
+                            position:
+                                Tween<Offset>(
+                                  begin: const Offset(0, 0.3),
+                                  end: Offset.zero,
+                                ).animate(
+                                  CurvedAnimation(
+                                    parent: _animationController,
+                                    curve: Curves.easeOutCubic,
+                                  ),
+                                ),
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: theme.cardColor,
+                                borderRadius: BorderRadius.circular(24),
+                              ),
+                              margin: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 8,
+                              ),
+                              padding: const EdgeInsets.all(24),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.all(8),
+                                        decoration: BoxDecoration(
+                                          gradient: const LinearGradient(
+                                            colors: [
+                                              Color(0xFFF59E0B),
+                                              Color(0xFFFBBF24),
+                                            ],
+                                          ),
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
+                                        ),
+                                        child: const Icon(
+                                          Icons.quiz_rounded,
+                                          color: Colors.white,
+                                          size: 20,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Text(
+                                        loc.generatedQuestions,
+                                        style: theme.textTheme.titleLarge
+                                            ?.copyWith(
+                                              fontWeight: FontWeight.bold,
+                                              letterSpacing: -0.5,
+                                            ),
+                                      ),
+                                      const Spacer(),
+                                      if (!_isGenerating &&
+                                          _generatedQuestions.isNotEmpty)
+                                        TextButton.icon(
+                                          onPressed: () {
+                                            for (final q
+                                                in _generatedQuestions) {
+                                              ExamStore.addQuestion(
+                                                ExamQuestion(
+                                                  id:
+                                                      DateTime.now()
+                                                          .millisecondsSinceEpoch
+                                                          .toString() +
+                                                      (q['question'] ?? '')
+                                                          .hashCode
+                                                          .toString(),
+                                                  question: q['question'] ?? '',
+                                                  answer: q['answer'] ?? '',
+                                                  type: q['type'] ?? '',
+                                                  difficulty:
+                                                      q['difficulty'] ?? '',
+                                                ),
+                                              );
+                                            }
+                                            setState(() {});
+                                            ScaffoldMessenger.of(
+                                              context,
+                                            ).showSnackBar(
+                                              SnackBar(
+                                                content: Row(
+                                                  children: [
+                                                    const Icon(
+                                                      Icons
+                                                          .assignment_turned_in_rounded,
+                                                      color: Colors.white,
+                                                      size: 20,
+                                                    ),
+                                                    const SizedBox(width: 12),
+                                                    Text(
+                                                      isArabic
+                                                          ? 'تمت إضافة الكل للامتحان'
+                                                          : 'All added to exam',
+                                                    ),
+                                                  ],
+                                                ),
+                                                backgroundColor: const Color(
+                                                  0xFFF59E0B,
+                                                ),
+                                                behavior:
+                                                    SnackBarBehavior.floating,
+                                                shape: RoundedRectangleBorder(
+                                                  borderRadius:
+                                                      BorderRadius.circular(12),
+                                                ),
+                                                duration: const Duration(
+                                                  seconds: 2,
+                                                ),
+                                              ),
+                                            );
+                                          },
+                                          icon: const Icon(
+                                            Icons.playlist_add_rounded,
+                                            size: 16,
+                                            color: Color(0xFFF59E0B),
+                                          ),
+                                          label: Text(
+                                            isArabic ? 'إضافة الكل' : 'Add all',
+                                            style: const TextStyle(
+                                              fontSize: 12,
+                                              color: Color(0xFFF59E0B),
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                          style: TextButton.styleFrom(
+                                            backgroundColor: const Color(
+                                              0xFFF59E0B,
+                                            ).withOpacity(0.1),
+                                            shape: RoundedRectangleBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
+                                            ),
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 10,
+                                              vertical: 6,
+                                            ),
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    loc.questionsBasedOnContent,
+                                    style: theme.textTheme.bodyMedium?.copyWith(
+                                      color: Colors.grey[600],
+                                    ),
+                                  ),
+                                  const SizedBox(height: 24),
+                                  if (_isGenerating)
+                                    const Center(
+                                      child: Padding(
+                                        padding: EdgeInsets.all(24),
+                                        child: CircularProgressIndicator(),
+                                      ),
+                                    )
+                                  else
+                                    ..._generatedQuestions.map(
+                                      (question) => QuestionItem(
+                                        theme: theme,
+                                        question: question['question'] ?? '',
+                                        answer: question['answer'] ?? '',
+                                        rawType: question['type'] ?? '',
+                                        rawDifficulty:
+                                            question['difficulty'] ?? '',
+                                        typeLabel: locByKey(
+                                          loc,
+                                          question['type'] ?? '',
+                                        ),
+                                        difficultyLabel: locByKey(
+                                          loc,
+                                          question['difficulty'] ?? '',
+                                        ),
+                                        loc: loc,
+                                        markdownStyle: _buildMarkdownStyle(
+                                          theme,
+                                        ),
+                                        onAddToExam: () {
+                                          ExamStore.addQuestion(
+                                            ExamQuestion(
+                                              id:
+                                                  DateTime.now()
+                                                      .millisecondsSinceEpoch
+                                                      .toString() +
+                                                  (question['question'] ?? '')
+                                                      .hashCode
+                                                      .toString(),
+                                              question:
+                                                  question['question'] ?? '',
+                                              answer: question['answer'] ?? '',
+                                              type: question['type'] ?? '',
+                                              difficulty:
+                                                  question['difficulty'] ?? '',
+                                            ),
+                                          );
+                                          setState(() {});
+                                        },
+                                        isInExam: ExamStore.containsNormalized(
+                                          question['question'] ?? '',
+                                        ),
+                                        isArabic: isArabic,
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        const SizedBox(height: 16),
+                      ],
+                    ),
                   ),
                 ),
               ),

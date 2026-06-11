@@ -101,7 +101,6 @@ class _SignUpPageState extends State<SignUpPage>
     }
   }
 
-  // ✅ احتفظ بهذه الدالة للاستخدام المستقبلي (مثلاً لو نجح التسجيل مباشرة)
   void _showSuccessSnackBar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -147,14 +146,12 @@ class _SignUpPageState extends State<SignUpPage>
     });
 
     try {
-      // First, send OTP to email
       final otpResponse = await _authService.sendOtp(
         email: _emailController.text.trim(),
       );
 
       if (otpResponse['success'] == true) {
         if (mounted) {
-          // Navigate to OTP verification page
           Navigator.push(
             context,
             PageTransition(
@@ -191,6 +188,7 @@ class _SignUpPageState extends State<SignUpPage>
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final localizations = AppLocalizations.of(context)!;
+    final bottomPadding = MediaQuery.of(context).padding.bottom;
 
     return Directionality(
       textDirection: isArabic ? TextDirection.rtl : TextDirection.ltr,
@@ -233,6 +231,7 @@ class _SignUpPageState extends State<SignUpPage>
                               ],
                             ),
                             child: SafeArea(
+                              bottom: false,
                               child: Padding(
                                 padding: const EdgeInsets.symmetric(vertical: 24),
                                 child: Column(
@@ -313,10 +312,10 @@ class _SignUpPageState extends State<SignUpPage>
                                                       color: Colors.white,
                                                       shape: BoxShape.circle,
                                                     ),
-                                                    child: Icon(
+                                                    child: const Icon(
                                                       Icons.camera_alt,
                                                       size: 18,
-                                                      color: const Color(0xFF6366F1),
+                                                      color: Color(0xFF6366F1),
                                                     ),
                                                   ),
                                                 ),
@@ -370,7 +369,7 @@ class _SignUpPageState extends State<SignUpPage>
                             child: ConstrainedBox(
                               constraints: BoxConstraints(maxWidth: Responsive.maxWidth(context)),
                               child: Padding(
-                                padding: const EdgeInsets.all(24.0),
+                                padding: EdgeInsets.fromLTRB(24, 24, 24, bottomPadding + 8),
                                 child: SlideTransition(
                                   position: _slideAnimation,
                                   child: Column(
@@ -598,25 +597,22 @@ class _SignUpPageState extends State<SignUpPage>
                                       const SizedBox(height: 20),
 
                                       /// Already have account
-                                      Padding(
-                                        padding: const EdgeInsets.only(bottom: 16),
-                                        child: Row(
-                                          mainAxisAlignment: MainAxisAlignment.center,
-                                          children: [
-                                            Text(
-                                              localizations.alreadyHaveAccount,
-                                              style: theme.textTheme.bodyMedium?.copyWith(color: Colors.grey[600]),
+                                      Row(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          Text(
+                                            localizations.alreadyHaveAccount,
+                                            style: theme.textTheme.bodyMedium?.copyWith(color: Colors.grey[600]),
+                                          ),
+                                          TextButton(
+                                            onPressed: _isLoading ? null : () => Navigator.pop(context),
+                                            style: TextButton.styleFrom(foregroundColor: const Color(0xFF6366F1)),
+                                            child: Text(
+                                              localizations.signIn,
+                                              style: const TextStyle(fontWeight: FontWeight.w600),
                                             ),
-                                            TextButton(
-                                              onPressed: _isLoading ? null : () => Navigator.pop(context),
-                                              style: TextButton.styleFrom(foregroundColor: const Color(0xFF6366F1)),
-                                              child: Text(
-                                                localizations.signIn,
-                                                style: const TextStyle(fontWeight: FontWeight.w600),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
+                                          ),
+                                        ],
                                       ),
                                     ],
                                   ),
