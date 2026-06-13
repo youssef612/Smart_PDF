@@ -1,0 +1,73 @@
+version: '3.8'
+
+services:
+
+  # ─── MongoDB ───────────────────────────────────────────
+  mongodb:
+    image: mongo:7
+    container_name: smartpdf_mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - smartpdf_net
+
+  # ─── Laravel Backend ───────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: smartpdf_backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      APP_ENV: production
+      APP_DEBUG: "false"
+      APP_URL: http://localhost:8000
+      DB_CONNECTION: mongodb
+      DB_HOST: mongodb
+      DB_PORT: 27017
+      DB_DATABASE: PDF_DB
+      MAIL_MAILER: smtp
+      MAIL_HOST: smtp.gmail.com
+      MAIL_PORT: 587
+      MAIL_USERNAME: smartpdf8@gmail.com
+      MAIL_PASSWORD: necyjrfuvearkpgh
+      MAIL_ENCRYPTION: tls
+      MAIL_FROM_ADDRESS: smartpdf8@gmail.com
+      MAIL_FROM_NAME: SmartPDF
+      JWT_SECRET: RJwz6cmlobrBkxHDEmZjZozTgrQGPznLtYsbWJmKIyQ6lDnHijVO4QDdu9fdFBgO
+      APP_KEY: base64:fJ/RGzWIgtK0/uHBRfgm5yeibPr8fi91EdKaqhDmkTo=
+      QUEUE_CONNECTION: sync
+      SESSION_DRIVER: file
+    volumes:
+      - storage_data:/var/www/html/storage
+    depends_on:
+      - mongodb
+    networks:
+      - smartpdf_net
+
+  # ─── Flutter Web Frontend ──────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: smartpdf_frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    networks:
+      - smartpdf_net
+
+volumes:
+  mongo_data:
+  storage_data:
+
+networks:
+  smartpdf_net:
+    driver: bridge
