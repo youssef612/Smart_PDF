@@ -256,6 +256,30 @@ class ApiService {
       return {'success': false, 'message': e.toString()};
     }
   }
+
+  // إعادة تسمية محادثة
+  Future<Map<String, dynamic>> renameConversation(String id, String newTitle) async {
+    try {
+      final response = await dio.patch(
+        '/conversations/$id',
+        data: {'title': newTitle},
+      );
+      return response.data;
+    } catch (e) {
+      debugPrint('❌ renameConversation error: $e');
+      return {'success': false, 'message': e.toString()};
+    }
+  }
+
+  Future<Map<String, dynamic>> pinConversation(String id) async {
+    try {
+      final response = await dio.patch('/conversations/$id/pin');
+      return response.data;
+    } catch (e) {
+      debugPrint('❌ pinConversation error: $e');
+      return {'success': false, 'message': e.toString()};
+    }
+  }
 }
 
 // Widget مؤقت للـ redirect لـ SignInPage
