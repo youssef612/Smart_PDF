@@ -2,28 +2,22 @@ FROM ghcr.io/cirruslabs/flutter:stable AS builder
 
 WORKDIR /app
 
-# نسخ الملفات
-COPY . .
-
-# تثبيت الـ dependencies
+# نسخ pubspec أولاً لاستخدام Docker cache
+COPY pubspec.yaml pubspec.lock ./
 RUN flutter pub get
 
-# بناء الـ web
-RUN flutter build web --release
+# نسخ باقي الملفات
+COPY . .
 
-# ─── Nginx لخدمة الـ Flutter web ───────────────────────
+# بناء الـ web
+RUN flutter build web --release --base-href "/"
+
+# ── Nginx ──────────────────────────────────────────────────
 FROM nginx:alpine
 
 COPY --from=builder /app/build/web /usr/share/nginx/html
 
-# إعداد Nginx
-RUN echo 'server { \
-    listen 80; \
-    root /usr/share/nginx/html; \
-    index index.html; \
-    location / { \
-        try_files $uri $uri/ /index.html; \
-    } \
-}' > /etc/nginx/conf.d/default.conf
+# إعداد Nginx المخصص (SPA + proxy للـ backend API)
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 80
