@@ -47,6 +47,7 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.13.1
 
 flutter:
   generate: true
@@ -54,6 +55,7 @@ flutter:
 
   assets:
     - assets/fonts/
+    - assets/icons/
 
   fonts:
     - family: Inter
@@ -71,4 +73,18 @@ flutter:
     - family: NotoSansMath
       fonts:
         - asset: assets/fonts/NotoSansMath-Regular.ttf
-    
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/icons/app_icon.png"
+  web:
+    generate: true
+    image_path: "assets/icons/app_icon.png"
+  windows:
+    generate: true
+    image_path: "assets/icons/app_icon.png"
+    remove_alpha_ios: true
+  linux:
+    generate: true
+    image_path: "assets/icons/app_icon.png"

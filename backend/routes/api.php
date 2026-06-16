@@ -5,6 +5,7 @@ use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\FilesController;
 use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\OtpController;
+use App\Http\Controllers\ExamSheetController;
 use App\Http\Controllers\ConversationController;
 /*
 |--------------------------------------------------------------------------
@@ -83,4 +84,14 @@ Route::middleware('auth:api')->group(function () {
     Route::get('/conversations/{id}', [ConversationController::class, 'show']);
     Route::delete('/conversations/{id}', [ConversationController::class, 'destroy']);
     Route::post('/conversations/{id}/chat', [ConversationController::class, 'chat']);
+    Route::patch('/conversations/{id}/pin', [ConversationController::class, 'pin']);
+    Route::patch('/conversations/{id}', [ConversationController::class, 'update']);
+
+    // Exams
+    Route::get('/exams', [ExamSheetController::class, 'index']);
+    Route::post('/exams', [ExamSheetController::class, 'store']);
+    Route::get('/exams/{id}', [ExamSheetController::class, 'show']);
+    Route::put('/exams/{id}', [ExamSheetController::class, 'update']);
+    Route::delete('/exams/{id}', [ExamSheetController::class, 'destroy']);
+    Route::post('/files/{fileId}/exam-questions', [ExamSheetController::class, 'generateQuestions']);
 });

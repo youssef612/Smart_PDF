@@ -16,28 +16,36 @@ class ConversationController extends Controller
     // ────────────────────────────────────────────────────────
     public function index()
     {
-        // سحب المحادثات مع عمل معالجة يدوية بدلاً من withCount التي يرفضها المونجو
         $conversations = Conversation::where('user_id', auth()->id())
             ->with('messages')
             ->latest()
             ->get();
 
+        // ✅ رتب في PHP: الـ pinned فوق، وجوا كل group الأحدث أول
+        $conversations = $conversations->sortByDesc(function ($conv) {
+            return [
+                $conv->is_pinned ? 1 : 0,
+                $conv->updated_at?->timestamp ?? 0,
+            ];
+        })->values();
+
         $formattedConversations = $conversations->map(function ($conversation) {
             return [
-                'id'             => (string) $conversation->_id, // تحويل الـ ObjectId لـ String صريح ليفهمه الفلاتر
+                'id'             => (string) $conversation->_id,
                 'user_id'        => $conversation->user_id,
                 'title'          => $conversation->title ?? 'New Chat',
                 'type'           => $conversation->type ?? 'general',
                 'file_id'        => $conversation->file_id ? (string) $conversation->file_id : null,
+                'is_pinned'      => (bool) ($conversation->is_pinned ?? false), // ✅ ضيف الفيلد
                 'messages_count' => $conversation->messages ? $conversation->messages->count() : 0,
-                'created_at'     => $conversation->created_at ? $conversation->created_at->toISOString() : null,
-                'updated_at'     => $conversation->updated_at ? $conversation->updated_at->toISOString() : null,
+                'created_at'     => $conversation->created_at?->toISOString(),
+                'updated_at'     => $conversation->updated_at?->toISOString(),
             ];
         });
 
         return response()->json([
             'success' => true,
-            'data'    => $formattedConversations
+            'data'    => $formattedConversations,
         ]);
     }
 
@@ -116,6 +124,59 @@ class ConversationController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Conversation deleted'
+        ]);
+    }
+
+    // ────────────────────────────────────────────────────────
+    //  PATCH /conversations/{id} (إعادة تسمية محادثة)
+    // ────────────────────────────────────────────────────────
+    public function update(Request $request, $id)
+    {
+        $request->validate([
+            'title' => 'required|string|max:100',
+        ]);
+
+        $conversation = Conversation::where('user_id', auth()->id())
+            ->findOrFail($id);
+
+        $conversation->update([
+            'title' => trim($request->title),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'data'    => [
+                'id'    => (string) $conversation->_id,
+                'title' => $conversation->title,
+            ]
+        ]);
+    }
+
+    // ────────────────────────────────────────────────────────
+    //  PATCH /conversations/{id}/pin
+    // ────────────────────────────────────────────────────────
+    public function pin($id)
+    {
+        $conversation = Conversation::where('user_id', auth()->id())
+            ->findOrFail($id);
+
+        $newPinState = !($conversation->is_pinned ?? false);
+        
+        $conversation->is_pinned = $newPinState;
+        $conversation->save();
+
+        // تحقق إن الحفظ اتعمل فعلاً
+        $fresh = $conversation->fresh();
+        
+        \Illuminate\Support\Facades\Log::info('PIN DEBUG', [
+            'id'        => $id,
+            'new_state' => $newPinState,
+            'saved'     => $fresh->is_pinned,
+        ]);
+
+        return response()->json([
+            'success'   => true,
+            'is_pinned' => (bool) $fresh->is_pinned,
         ]);
     }
 
