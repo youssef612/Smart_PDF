@@ -14,7 +14,7 @@ use Illuminate\Validation\Rule;
 
 class FilesController extends Controller
 {
-const MARKER_URL = 'https://catapult-pang-rival.ngrok-free.dev';
+const MARKER_URL = 'http://extractor:7070';
 const MODEL_URL  = 'https://nuttiness-reattach-each.ngrok-free.dev';
     const NGROK_HEADERS = [
         'ngrok-skip-browser-warning' => 'true',
@@ -140,7 +140,6 @@ const MODEL_URL  = 'https://nuttiness-reattach-each.ngrok-free.dev';
                 return response()->json([
                     'success' => false,  // ✅ غيّر
                     'message' => 'File saved but extraction failed',
-                    'data'    => $this->formatFile($savedFile->fresh()),
                     'has_text' => false,
                 ], 422);
             }
@@ -165,7 +164,6 @@ const MODEL_URL  = 'https://nuttiness-reattach-each.ngrok-free.dev';
                 return response()->json([
                     'success' => true,
                     'message' => 'File uploaded successfully',
-                    'data'    => $this->formatFile($savedFile->fresh()),
                     'has_text' => true,
                 ], 200);
             }
@@ -176,7 +174,6 @@ const MODEL_URL  = 'https://nuttiness-reattach-each.ngrok-free.dev';
                 return response()->json([
                     'success' => true,
                     'message' => 'File uploaded, extraction in progress',
-                    'data'    => $this->formatFile($savedFile->fresh()),
                     'has_text' => false,
                 ], 200);
             }
@@ -186,7 +183,6 @@ const MODEL_URL  = 'https://nuttiness-reattach-each.ngrok-free.dev';
             return response()->json([
                 'success' => false,  // ✅ غيّر
                 'message' => 'File saved but no job ID returned',
-                'data'    => $this->formatFile($savedFile->fresh()),
                 'has_text' => false,
             ], 422);
 
@@ -197,7 +193,6 @@ const MODEL_URL  = 'https://nuttiness-reattach-each.ngrok-free.dev';
             return response()->json([
                 'success' => false,  // ✅ غيّر
                 'message' => 'File saved but extraction failed',
-                'data'    => $this->formatFile($savedFile->fresh()),
                 'has_text' => false,
             ], 500);
         }
@@ -1842,8 +1837,14 @@ B) $\phi(x) = \lambda \int_0^x K(x,t)\phi(t)\,dt$
 C) $f(x) = \int_a^b K(x,t)\,dt$
 D) $\phi(x) = f(x) - \lambda K(x,t)$
 
-**Answer:** A) The second kind includes $\phi(x)$ on both sides; $a,b$ are fixed constants distinguishing it from Volterra.
+**Answer:** A) The second kind includes $\phi(x)$ on both sides with fixed limits $a$ and $b$, distinguishing it from Volterra equations where the upper limit is $x$.
 ##QSEP##
+
+CRITICAL MATH RULE: Every variable or expression in prose text MUST be in $...$
+✅ "...the kernel $K(x,t)$ is symmetric."
+✅ "...where $f(x) \\neq 0$, the equation is inhomogeneous."
+❌ NEVER let a variable appear alone on its own line outside $...$
+❌ NEVER use \\( \\) or \\[ \\] delimiters — ONLY $ and $$
 EX,
 
             'true_false' => <<<'EX'
@@ -2089,10 +2090,19 @@ EX,
             'multiple_choice' => <<<'INST'
 TYPE RULES — multiple_choice:
 - One clear question from the source text
-- Exactly 4 options: A) B) C) D)
+- Exactly 4 options: A) B) C) D) — each on its OWN line
 - Only ONE correct answer — others must be plausible but wrong
-- Use LaTeX for all math
-- Answer: correct letter + one-line justification
+- Use LaTeX for ALL math: inline $x$ for variables, $$expr$$ for block
+- CRITICAL: Every math variable or symbol in prose MUST be in $...$
+  ✅ CORRECT: "...depends on $K(x,t)$."
+  ❌ WRONG:   "...depends on
+K(x,t)."
+  ✅ CORRECT: "...where $f(x) \neq 0$."
+  ❌ WRONG:   "...
+\phi(x)) as the kernel..."
+- NEVER split a sentence so that a math variable appears on its own line
+- Answer: correct letter + 2-3 sentence justification, all math in $...$
+- NEVER use \( \) or \[ \] — ONLY $ and $$
 INST,
 
             'true_false' => <<<'INST'
@@ -2115,12 +2125,17 @@ TYPE RULES — short_answer:
 - One focused question requiring 2-4 sentence answer
 - Answer must use LaTeX for math
 - No yes/no questions — require explanation
+- CRITICAL: Every math variable or symbol in prose MUST be in $...$
+- NEVER split a sentence so that a variable appears alone on its own line
+- NEVER use \( \) or \[ \] — ONLY $ and $$
 INST,
 
             'essay' => <<<'INST'
 TYPE RULES — essay:
 - One deep derivation or analysis question
 - Answer: bullet list of ALL key points with expected LaTeX expressions
+- CRITICAL: Every math variable or symbol in prose MUST be in $...$
+- NEVER use \( \) or \[ \] — ONLY $ and $$
 INST,
 
             'fill_blank' => <<<'INST'

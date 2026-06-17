@@ -4,7 +4,7 @@ import 'package:flutter/services.dart';
 import 'exam_models.dart';
 import 'widgets/pdf_export.dart';
 import 'widgets/word_export.dart';
-import 'widgets/math_markdown.dart';
+import 'widgets/math_markdown2.dart';
 import 'widgets/interactive_scale.dart';
 import '../services/files_service.dart';
 import 'questions_page.dart';

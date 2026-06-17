@@ -11,6 +11,8 @@ import 'package:printing/printing.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
+import 'package:arabic_reshaper/arabic_reshaper.dart';
+import 'package:bidi/bidi.dart' as bidi;
 import '../../main.dart' show navigatorKey;
 import '../../utils/math_image_renderer.dart';
 
@@ -117,11 +119,11 @@ List<Map<String, dynamic>> _classifyLines(List<String> rawLines) {
 List<_Tok> _tokenize(String input) {
   input = input.replaceAllMapped(
     RegExp(r'\\\[([\s\S]+?)\\\]', multiLine: true),
-    (m) => '\$\$${(m[1] ?? '').trim()}\$\$',
+        (m) => '\$\$${(m[1] ?? '').trim()}\$\$',
   );
   input = input.replaceAllMapped(
     RegExp(r'\\\((.+?)\\\)', dotAll: false),
-    (m) => '\$${(m[1] ?? '').trim()}\$',
+        (m) => '\$${(m[1] ?? '').trim()}\$',
   );
 
   final toks    = <_Tok>[];
@@ -221,27 +223,20 @@ bool _containsArabic(String text) =>
   final stripped = _stripEmojis(raw);
   if (!_containsArabic(stripped)) return (text: stripped, bypassed: false);
   try {
-    // Reverse WORD order for visual RTL layout.
-    // Keep CHAR order within each word — the font (NotoSansArabic) handles
-    // letter-connection (shaping) via OpenType on the logical char sequence.
-    // Reversing chars caused broken/disconnected letters; don't do that.
-    //
-    // Split on whitespace runs, reverse the whole list, rejoin.
-    final parts = stripped.split(RegExp(r'(\s+)'));
-    // Dart split with captured groups not available; use a manual approach:
-    final wordOrderRegex = RegExp(r'\S+|\s+');
-    final tokens = wordOrderRegex
-        .allMatches(stripped)
-        .map((m) => m.group(0)!)
-        .toList();
-    final visual = tokens.reversed.join();
+    // Step 1: reshape Arabic letters so they connect properly (isolated → connected forms)
+    final reshaped = ArabicReshaper.instance.reshape(stripped);
+    // Step 2: convert to visual order — logicalToVisual returns List<int> char codes
+    final visualCodes = bidi.logicalToVisual(reshaped);
+    final visual = String.fromCharCodes(visualCodes);
+    // Step 3: render as LTR — pdf package skips bidi_utils, font handles display
     return (text: visual, bypassed: true);
   } catch (e) {
-    debugPrint('[PdfExporter] Arabic prepare error: $e');
+    debugPrint('[PdfExporter] Arabic reshape error: $e');
     return (text: stripped, bypassed: false);
   }
 }
-/// Simple version — returns text only. Use when textDirection is already fixed.
+
+/// Simple version — returns text only.
 String _prepareText(String text) => _prepareTextEx(text).text;
 
 pw.TextDirection _detectDir(String text) {
@@ -250,32 +245,22 @@ pw.TextDirection _detectDir(String text) {
   return ar / text.length > 0.3 ? pw.TextDirection.rtl : pw.TextDirection.ltr;
 }
 
-/// Build a pw.Text that safely handles Arabic by bypassing pdf's buggy bidi_utils.
+/// Build a pw.Text that safely handles Arabic via textDirection: rtl.
 pw.Widget _safePwText(
-  String text, {
-  required pw.TextStyle style,
-  pw.TextAlign? textAlign,
-  bool softWrap = true,
-}) {
-  final r = _prepareTextEx(text);
-  final dir = r.bypassed ? pw.TextDirection.ltr : _detectDir(text);
-  // For bypassed Arabic (reversed word order, LTR direction):
-  // Use textAlign.left so line-wrapping works correctly L→R.
-  // The visual result looks right-aligned because text starts from right side.
-  // Using textAlign.right here causes the wrap to push words to a new line
-  // from the left, breaking the sentence visually.
-  final align = textAlign ??
-      (r.bypassed
-          ? pw.TextAlign.left
-          : dir == pw.TextDirection.rtl
-              ? pw.TextAlign.right
-              : pw.TextAlign.left);
+    String text, {
+      required pw.TextStyle style,
+      pw.TextAlign? textAlign,
+      bool softWrap = true,
+    }) {
+  final cleaned = _stripEmojis(text);
+  final dir     = _detectDir(cleaned);
+  final align   = textAlign ?? (dir == pw.TextDirection.rtl ? pw.TextAlign.right : pw.TextAlign.left);
   return pw.Text(
-    r.text,
-    softWrap: softWrap,
+    cleaned,
+    softWrap:      softWrap,
     textDirection: dir,
-    textAlign: align,
-    style: style,
+    textAlign:     align,
+    style:         style,
   );
 }
 
@@ -325,14 +310,14 @@ class PdfExporter {
   // _buildParagraphWidgets
   // ──────────────────────────────────────────────────────
   static Future<List<pw.Widget>> _buildParagraphWidgets(
-    String   text, {
-    required pw.Font fontRegular,
-    required pw.Font fontMono,
-    required bool    isArabic,
-    double   fontSize     = 12,
-    PdfColor textColor    = PdfColors.grey900,
-    double   contentWidth = _pageWidth,
-  }) async {
+      String   text, {
+        required pw.Font fontRegular,
+        required pw.Font fontMono,
+        required bool    isArabic,
+        double   fontSize     = 12,
+        PdfColor textColor    = PdfColors.grey900,
+        double   contentWidth = _pageWidth,
+      }) async {
     final toks = _tokenize(text);
     if (toks.isEmpty) return [];
 
@@ -344,7 +329,7 @@ class PdfExporter {
       final latex = toks.first.content;
       debugPrint('[PDF] CASE1 block math latex: "$latex"');
       final bytes = await MathImageRenderer.render(
-        latex, fontSize: fontSize + 4, pixelRatio: 3.0);
+          latex, fontSize: fontSize + 4, pixelRatio: 3.0);
       debugPrint('[PDF] CASE1 math render result: ${bytes?.length ?? "NULL"}');
       if (bytes != null) {
         return [_blockMathImageWidget(bytes, fontSize)];
@@ -358,11 +343,11 @@ class PdfExporter {
       final paragraphTokens = toks
           .where((t) => t.type != _TT.inlineCode)
           .map((t) => ParagraphToken(
-                text:   (t.type == _TT.inlineMath || t.type == _TT.blockMath)
-                    ? t.content
-                    : _stripEmojis(_cleanBodyText(t.content)),
-                isMath: t.type == _TT.inlineMath || t.type == _TT.blockMath,
-              ))
+        text:   (t.type == _TT.inlineMath || t.type == _TT.blockMath)
+            ? t.content
+            : _stripEmojis(_cleanBodyText(t.content)),
+        isMath: t.type == _TT.inlineMath || t.type == _TT.blockMath,
+      ))
           .toList();
 
       debugPrint('[PDF] CASE2 paragraph tokens: ${paragraphTokens.length}');
@@ -428,13 +413,13 @@ class PdfExporter {
   // FIX v8: use _cleanBodyText to strip **bold** markers
   // ──────────────────────────────────────────────────────
   static List<pw.Widget> _buildPlainTokenWidgets(
-    List<_Tok> tokens, {
-    required pw.Font fontRegular,
-    required pw.Font fontMono,
-    required bool    isArabic,
-    double   fontSize  = 12,
-    PdfColor textColor = PdfColors.grey900,
-  }) {
+      List<_Tok> tokens, {
+        required pw.Font fontRegular,
+        required pw.Font fontMono,
+        required bool    isArabic,
+        double   fontSize  = 12,
+        PdfColor textColor = PdfColors.grey900,
+      }) {
     final widgets = <pw.Widget>[];
     for (final tok in tokens) {
       if (tok.type == _TT.inlineCode) {
@@ -443,13 +428,15 @@ class PdfExporter {
         // FIX v8: strip markdown bold/italic before displaying
         final cleaned = _stripEmojis(_cleanBodyText(tok.content));
         if (cleaned.isEmpty) continue;
-        final prepared = _prepareText(cleaned);
-        final dir      = _detectDir(cleaned);
+        final r       = _prepareTextEx(cleaned);
+        final dir     = r.bypassed ? pw.TextDirection.ltr : _detectDir(cleaned);
+        final isAr    = r.bypassed || _detectDir(cleaned) == pw.TextDirection.rtl;
+        final align   = isAr ? pw.TextAlign.right : pw.TextAlign.left;
         widgets.add(pw.Text(
-          prepared,
+          r.text,
           softWrap:      true,
-          textDirection: pw.TextDirection.ltr,
-          textAlign:     pw.TextAlign.left,
+          textDirection: dir,
+          textAlign:     align,
           style: pw.TextStyle(
             font:        fontRegular,
             fontSize:    fontSize,
@@ -467,13 +454,13 @@ class PdfExporter {
   // FIX v8: use _cleanBodyText for text tokens
   // ──────────────────────────────────────────────────────
   static Future<List<pw.Widget>> _buildTokenWidgets(
-    List<_Tok> tokens, {
-    required pw.Font fontRegular,
-    required pw.Font fontMono,
-    required bool    isArabic,
-    double   fontSize  = 12,
-    PdfColor textColor = PdfColors.grey900,
-  }) async {
+      List<_Tok> tokens, {
+        required pw.Font fontRegular,
+        required pw.Font fontMono,
+        required bool    isArabic,
+        double   fontSize  = 12,
+        PdfColor textColor = PdfColors.grey900,
+      }) async {
     final widgets = <pw.Widget>[];
 
     for (final tok in tokens) {
@@ -500,16 +487,17 @@ class PdfExporter {
           widgets.add(_codeWidget(tok.content, fontMono, fontSize));
 
         case _TT.text:
-          // FIX v8: strip markdown bold/italic
           final cleaned = _stripEmojis(_cleanBodyText(tok.content));
           if (cleaned.isEmpty) break;
-          final prepared = _prepareText(cleaned);
-          final dir      = _detectDir(cleaned);
+          final r     = _prepareTextEx(cleaned);
+          final dir   = r.bypassed ? pw.TextDirection.ltr : _detectDir(cleaned);
+          final isAr  = r.bypassed || _detectDir(cleaned) == pw.TextDirection.rtl;
+          final align = isAr ? pw.TextAlign.right : pw.TextAlign.left;
           widgets.add(pw.Text(
-            prepared,
+            r.text,
             softWrap:      true,
-            textDirection: pw.TextDirection.ltr,
-            textAlign:     pw.TextAlign.left,
+            textDirection: dir,
+            textAlign:     align,
             style: pw.TextStyle(
               font:        fontRegular,
               fontSize:    fontSize,
@@ -552,8 +540,8 @@ class PdfExporter {
         borderRadius: const pw.BorderRadius.all(pw.Radius.circular(3)),
       ),
       child: pw.Text(content,
-        style: pw.TextStyle(font: fontMono, fontSize: fontSize - 1,
-            color: const PdfColor(0.13, 0.13, 0.6), lineSpacing: 2)),
+          style: pw.TextStyle(font: fontMono, fontSize: fontSize - 1,
+              color: const PdfColor(0.13, 0.13, 0.6), lineSpacing: 2)),
     );
   }
 
@@ -565,7 +553,7 @@ class PdfExporter {
         borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4)),
       ),
       child: pw.Text(_latexToReadable(latex),
-        style: pw.TextStyle(font: fontMono, fontSize: fontSize, color: PdfColors.indigo900)),
+          style: pw.TextStyle(font: fontMono, fontSize: fontSize, color: PdfColors.indigo900)),
     );
   }
 
@@ -581,8 +569,8 @@ class PdfExporter {
           border:       pw.Border.all(color: PdfColors.grey300),
         ),
         child: pw.Text(content, softWrap: true,
-          style: pw.TextStyle(font: fontMono, fontSize: 10,
-              color: PdfColors.grey800, lineSpacing: 4, letterSpacing: 0.2)),
+            style: pw.TextStyle(font: fontMono, fontSize: 10,
+                color: PdfColors.grey800, lineSpacing: 4, letterSpacing: 0.2)),
       ),
     );
   }
@@ -692,45 +680,48 @@ class PdfExporter {
                       return pw.SizedBox(height: 8);
 
                     case _LineType.h1: {
-                      final prepared = _prepareText(content);
-                      final dir      = _detectDir(content);
+                      final r     = _prepareTextEx(content);
+                      final dir   = r.bypassed ? pw.TextDirection.ltr : _detectDir(content);
+                      final align = (r.bypassed || _detectDir(content) == pw.TextDirection.rtl) ? pw.TextAlign.right : pw.TextAlign.left;
                       return pw.Padding(
                         padding: const pw.EdgeInsets.only(top: 16, bottom: 6),
                         child: pw.Text(
-                          prepared,
+                          r.text,
                           softWrap:      true,
-                          textDirection: pw.TextDirection.ltr,
-                          textAlign: pw.TextAlign.left,
+                          textDirection: dir,
+                          textAlign:     align,
                           style: pw.TextStyle(font: fontBold, fontSize: 16, color: PdfColors.indigo800),
                         ),
                       );
                     }
 
                     case _LineType.h2: {
-                      final prepared = _prepareText(content);
-                      final dir      = _detectDir(content);
+                      final r     = _prepareTextEx(content);
+                      final dir   = r.bypassed ? pw.TextDirection.ltr : _detectDir(content);
+                      final align = (r.bypassed || _detectDir(content) == pw.TextDirection.rtl) ? pw.TextAlign.right : pw.TextAlign.left;
                       return pw.Padding(
                         padding: const pw.EdgeInsets.only(top: 14, bottom: 5),
                         child: pw.Text(
-                          prepared,
+                          r.text,
                           softWrap:      true,
-                          textDirection: pw.TextDirection.ltr,
-                          textAlign: pw.TextAlign.left,
+                          textDirection: dir,
+                          textAlign:     align,
                           style: pw.TextStyle(font: fontBold, fontSize: 14, color: PdfColors.indigo700),
                         ),
                       );
                     }
 
                     case _LineType.h3: {
-                      final prepared = _prepareText(content);
-                      final dir      = _detectDir(content);
+                      final r     = _prepareTextEx(content);
+                      final dir   = r.bypassed ? pw.TextDirection.ltr : _detectDir(content);
+                      final align = (r.bypassed || _detectDir(content) == pw.TextDirection.rtl) ? pw.TextAlign.right : pw.TextAlign.left;
                       return pw.Padding(
                         padding: const pw.EdgeInsets.only(top: 12, bottom: 4),
                         child: pw.Text(
-                          prepared,
+                          r.text,
                           softWrap:      true,
-                          textDirection: pw.TextDirection.ltr,
-                          textAlign: pw.TextAlign.left,
+                          textDirection: dir,
+                          textAlign:     align,
                           style: pw.TextStyle(font: fontBold, fontSize: 13, color: PdfColors.indigo600),
                         ),
                       );
@@ -738,13 +729,14 @@ class PdfExporter {
 
                     case _LineType.bullet:
                     case _LineType.numberedBullet: {
-                      final isRtl = isArabic || _detectDir(content) == pw.TextDirection.rtl;
+                      final contentDir = _detectDir(content);
+                      final isRtl = contentDir == pw.TextDirection.rtl;
                       final label = type == _LineType.numberedBullet
                           ? '${cl['number'] ?? '1'}. ' : '• ';
                       final inner = preRendered[idx] ?? [
                         pw.Text(_prepareText(content), softWrap: true,
-                            textDirection: pw.TextDirection.ltr,
-                            textAlign: pw.TextAlign.left,
+                            textDirection: isRtl ? pw.TextDirection.rtl : pw.TextDirection.ltr,
+                            textAlign: isRtl ? pw.TextAlign.right : pw.TextAlign.left,
                             style: pw.TextStyle(font: fontRegular, fontSize: 12, color: PdfColors.grey900)),
                       ];
                       return pw.Padding(
@@ -780,17 +772,18 @@ class PdfExporter {
 
                     case _LineType.body:
                     default:
+                      final bodyDir = _detectDir(content);
                       final inner = preRendered[idx] ?? [
                         pw.Text(_prepareText(content), softWrap: true,
-                            textDirection: pw.TextDirection.ltr,
-                            textAlign: pw.TextAlign.left,
+                            textDirection: bodyDir,
+                            textAlign: bodyDir == pw.TextDirection.rtl ? pw.TextAlign.right : pw.TextAlign.left,
                             style: pw.TextStyle(font: fontRegular, fontSize: 12,
                                 color: PdfColors.grey900, lineSpacing: 3)),
                       ];
                       return pw.Padding(
                         padding: const pw.EdgeInsets.only(bottom: 4),
                         child: pw.Column(
-                          crossAxisAlignment: isArabic
+                          crossAxisAlignment: bodyDir == pw.TextDirection.rtl
                               ? pw.CrossAxisAlignment.end
                               : pw.CrossAxisAlignment.start,
                           children: inner,
@@ -979,10 +972,10 @@ class PdfExporter {
   static String _normalizeDelimiters(String text) {
     text = text.replaceAllMapped(
         RegExp(r'\\\[([\s\S]+?)\\\]', multiLine: true),
-        (m) => '\n\$\$${(m[1] ?? '').trim()}\$\$\n');
+            (m) => '\n\$\$${(m[1] ?? '').trim()}\$\$\n');
     text = text.replaceAllMapped(
         RegExp(r'\\\((.+?)\\\)', dotAll: false),
-        (m) => '\$${(m[1] ?? '').trim()}\$');
+            (m) => '\$${(m[1] ?? '').trim()}\$');
     return text;
   }
 
@@ -1019,9 +1012,9 @@ class PdfExporter {
 
   static String _stripAndConvertMath(String text) {
     text = text.replaceAllMapped(RegExp(r'\$\$([\s\S]+?)\$\$', dotAll: true),
-        (m) => '\n[${_latexToReadable(m[1] ?? '')}]\n');
+            (m) => '\n[${_latexToReadable(m[1] ?? '')}]\n');
     text = text.replaceAllMapped(RegExp(r'\$([^\$\n]+?)\$'),
-        (m) => '[${_latexToReadable(m[1] ?? '')}]');
+            (m) => '[${_latexToReadable(m[1] ?? '')}]');
     return text;
   }
 

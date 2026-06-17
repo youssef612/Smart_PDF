@@ -1,8 +1,6 @@
 FROM python:3.11-slim
-
 WORKDIR /app
 
-# تثبيت dependencies النظام المطلوبة لـ marker-pdf
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1 \
     libglib2.0-0 \
@@ -16,10 +14,9 @@ COPY extractor_server.py .
 RUN pip install --no-cache-dir \
     fastapi \
     uvicorn \
-    marker-pdf \
+    docling \
     python-multipart \
     pypdf
 
 EXPOSE 7070
-
 CMD ["python3", "extractor_server.py"]

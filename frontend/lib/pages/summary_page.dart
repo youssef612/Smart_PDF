@@ -8,7 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:project_flutter/services/api_service.dart';
 import 'package:project_flutter/services/history_store.dart';
-import 'package:project_flutter/pages/widgets/math_markdown.dart';
+import 'package:project_flutter/pages/widgets/math_markdown2.dart';
 import 'widgets/particles_painter.dart';
 import 'widgets/pdf_export.dart';
 import 'widgets/word_export.dart';

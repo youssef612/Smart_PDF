@@ -9,18 +9,16 @@ import 'package:flutter/services.dart';
 import '../utils/responsive.dart';
 
 import 'package:flutter_markdown/flutter_markdown.dart';
-import 'widgets/math_markdown.dart';
+import 'widgets/math_markdown2.dart';
 import 'widgets/pdf_export.dart';
 import 'widgets/word_export.dart';
 import '../l10n/app_localizations.dart';
 import '../services/api_service.dart';
-import '../services/exam_service.dart';
 import '../services/history_store.dart';
 import 'package:project_flutter/services/files_service.dart';
 import 'exam_models.dart';
 import 'exam_page.dart';
 import 'home_page.dart';
-import 'exam_list_page.dart';
 
 export 'exam_models.dart';
 export 'exam_page.dart';
@@ -39,6 +37,105 @@ Color _difficultyColor(String rawDifficulty) {
   }
 }
 
+String _preprocessQuestionText(String text) {
+  // [fix] وصّل السطور المكسورة زي: e^{\n-x} أو g(x)=e^{\n-x}
+  text = text.replaceAllMapped(
+    RegExp(r'(\w\^\{[^}\n]*)\n([^}\n]*\})'),
+    (m) => '${m[1]}${m[2]}',
+  );
+  text = text.replaceAllMapped(
+    RegExp(r'(\\\w+\{[^}\n]*)\n([^}\n]*\})'),
+    (m) => '${m[1]}${m[2]}',
+  );
+
+  final lines  = text.split('\n');
+  final result = <String>[];
+  bool inFence = false;
+
+  for (final line in lines) {
+    final trimmed = line.trim();
+
+    if (trimmed.startsWith('```')) {
+      inFence = !inFence;
+      result.add(line);
+      continue;
+    }
+    if (inFence) { result.add(line); continue; }
+
+    // [fix] سطر بيبدأ بـ closing brace → وصّله بالسابق
+    if (RegExp(r'^-?[a-zA-Z0-9]\s*\}').hasMatch(trimmed) && result.isNotEmpty) {
+      for (int i = result.length - 1; i >= 0; i--) {
+        if (result[i].trim().isNotEmpty) {
+          result[i] = result[i].trimRight() + trimmed;
+          break;
+        }
+      }
+      continue;
+    }
+
+    // سطر فيه bare LaTeX خارج $ → لفّه في $$
+    final hasBareLatex = _hasBareLatexOutsideDelimiters(trimmed);
+    if (hasBareLatex && trimmed.isNotEmpty) {
+      final cleaned = _stripOrphanDollars(trimmed);
+      result.add('\$\$$cleaned\$\$');
+      continue;
+    }
+
+    // سطر فيه $ بالفعل وسليم → اتركه
+    if (trimmed.contains(r'$')) {
+      result.add(line);
+      continue;
+    }
+
+    // سطر فيه LaTeX commands بدون $ → لفّه في $$
+    final hasLatex = RegExp(
+      r'\\(?:phi|psi|int|frac|sqrt|sum|prod|lim|partial|'
+      r'lambda|mu|sigma|theta|pi|alpha|beta|gamma|delta|'
+      r'omega|nabla|infty|cdot|times|text|mathbf|vec|hat|'
+      r'left|right|begin|end)\b',
+    ).hasMatch(trimmed);
+
+    final isCodeLine = RegExp(
+      r'^\s*(?:def |class |import |function |const |let |var |'
+      r'#include|cout|printf|public |private )',
+    ).hasMatch(trimmed);
+
+    if (hasLatex && !isCodeLine && trimmed.isNotEmpty) {
+      result.add('\$\$$trimmed\$\$');
+      continue;
+    }
+
+    result.add(line);
+  }
+
+  return result.join('\n');
+}
+
+// ── helpers ──────────────────────────────────────────────────
+
+/// يشوف لو السطر فيه \command برة أي $ delimiter
+bool _hasBareLatexOutsideDelimiters(String line) {
+  // إزالة كل اللي جوه $...$ أو $$...$$
+  String stripped = line
+      .replaceAll(RegExp(r'\$\$[^$]*\$\$'), '')
+      .replaceAll(RegExp(r'\$[^$\n]*\$'), '');
+  // لو لسه فيه \command → فيه bare LaTeX
+  return RegExp(
+    r'\\(?:phi|psi|lambda|mu|sigma|theta|int|frac|sqrt|'
+    r'sum|partial|alpha|beta|gamma|delta|omega|cdot|times|'
+    r'left|right|infty|nabla|vec|hat|bar)\b'
+  ).hasMatch(stripped);
+}
+
+/// يشيل الـ $ المنفردة اللي مش بتعمل pair صح
+String _stripOrphanDollars(String line) {
+  // عد الـ $ — لو عددهم فردي → فيه orphan
+  // الحل: شيل كل $ منفردة (مش $$)
+  return line
+      .replaceAll(RegExp(r'(?<!\$)\$(?!\$)'), ' ')
+      .replaceAll(RegExp(r'\s{2,}'), ' ')
+      .trim();
+}
 Color _typeColor(String rawType) {
   switch (rawType.toLowerCase().trim()) {
     case 'multiple':
@@ -82,22 +179,22 @@ String _fixLatexSpacing(String raw) {
 String _fixBrokenLatex(String text) {
   return text
       .replaceAllMapped(
-    RegExp(r'([a-zA-Z])_(\d+)_\{([^}]+)\}'),
+        RegExp(r'([a-zA-Z])_(\d+)_\{([^}]+)\}'),
         (m) => '${m[1]}_{${m[2]},${m[3]}}',
-  )
+      )
       .replaceAllMapped(
-    RegExp(r'([a-zA-Z])_(\d+)_([a-zA-Z]+)'),
+        RegExp(r'([a-zA-Z])_(\d+)_([a-zA-Z]+)'),
         (m) => '${m[1]}_{${m[2]},${m[3]}}',
-  );
+      );
 }
 
 /// بس لـ multiple_choice — مش للـ matching أو ordering
 String _fixMCQOptions(String text) {
   return text
       .replaceAllMapped(
-    RegExp(r'(?<!\n)([A-D])\)\s+(?![a-z])'),
+        RegExp(r'(?<!\n)([A-D])\)\s+(?![a-z])'),
         (m) => '\n\n${m[1]}) ',
-  )
+      )
       .replaceAll(RegExp(r'\?\s*\n\nA\)'), '\n\nA)')
       .trim();
 }
@@ -166,13 +263,13 @@ Map<String, String> _splitSection(String section, String rawType) {
   String body = section
       .replaceAll(RegExp(r'#{0,2}QSEP##', caseSensitive: false), '')
       .replaceFirst(
-    RegExp(
-      r'^##\s*Question\s*\d+[^\n]*\n?',
-      caseSensitive: false,
-      multiLine: true,
-    ),
-    '',
-  )
+        RegExp(
+          r'^##\s*Question\s*\d+[^\n]*\n?',
+          caseSensitive: false,
+          multiLine: true,
+        ),
+        '',
+      )
       .trim();
 
   // الـ answer separator — دايماً **Answer:** على سطر لوحده
@@ -206,12 +303,12 @@ Map<String, String> _splitSection(String section, String rawType) {
 String _cleanQuestion(String text, String rawType) {
   text = text
       .replaceAll(
-    RegExp(
-      r'(?:Type|Difficulty|Topic|Question):[^\n]*\n?',
-      caseSensitive: false,
-    ),
-    '',
-  )
+        RegExp(
+          r'(?:Type|Difficulty|Topic|Question):[^\n]*\n?',
+          caseSensitive: false,
+        ),
+        '',
+      )
       .trim();
   text = _fixLatexSpacing(_fixBrokenLatex(text));
   // بس لـ multiple_choice نفصل الـ options
@@ -235,10 +332,10 @@ String _cleanAnswer(String text) {
 // ─── main parser ─────────────────────────────────────────────
 
 List<Map<String, String>> parseQuestions(
-    String raw,
-    String rawType,
-    String difficulty,
-    ) {
+  String raw,
+  String rawType,
+  String difficulty,
+) {
   if (raw.trim().isEmpty) return [];
 
   // شيل code fences
@@ -256,9 +353,9 @@ List<Map<String, String>> parseQuestions(
         .map((e) => e.trim())
         .where(
           (e) =>
-      e.isNotEmpty &&
-          RegExp(r'##\s*Question\s*\d+', caseSensitive: false).hasMatch(e),
-    )
+              e.isNotEmpty &&
+              RegExp(r'##\s*Question\s*\d+', caseSensitive: false).hasMatch(e),
+        )
         .toList();
   } else {
     // محاولة 2: split على ## Question N
@@ -375,7 +472,7 @@ class _QuestionsPageState extends State<QuestionsPage>
 
   String get _selectedTypeLabel {
     final match = kQuestionTypes.firstWhere(
-          (t) => t['value'] == _selectedQuestionType,
+      (t) => t['value'] == _selectedQuestionType,
       orElse: () => kQuestionTypes.first,
     );
     return isArabic ? match['labelAr'] as String : match['labelEn'] as String;
@@ -383,7 +480,7 @@ class _QuestionsPageState extends State<QuestionsPage>
 
   IconData get _selectedTypeIcon {
     final match = kQuestionTypes.firstWhere(
-          (t) => t['value'] == _selectedQuestionType,
+      (t) => t['value'] == _selectedQuestionType,
       orElse: () => kQuestionTypes.first,
     );
     return match['icon'] as IconData;
@@ -412,13 +509,13 @@ class _QuestionsPageState extends State<QuestionsPage>
       // لو مش موجود → unmap اللي جوه الـ data
       _selectedQuestionType =
           widget.questionType ??
-              _unmapType(_generatedQuestions.first['type'] ?? 'multiple');
+          _unmapType(_generatedQuestions.first['type'] ?? 'multiple');
 
       // ✅ خد difficulty من widget أولاً
       _selectedDifficulty =
           widget.difficulty ??
-              _generatedQuestions.first['difficulty'] ??
-              'medium';
+          _generatedQuestions.first['difficulty'] ??
+          'medium';
     } else {
       // مفيش بيانات محفوظة → خد من widget لو موجود
       if (widget.questionType != null)
@@ -481,7 +578,7 @@ class _QuestionsPageState extends State<QuestionsPage>
 
             // 2. إعادة تعيين الخيارات للشكل الافتراضي تماماً
             _selectedQuestionType =
-            'multiple'; // النوع الافتراضي (اختيار من متعدد)
+                'multiple'; // النوع الافتراضي (اختيار من متعدد)
             _selectedDifficulty = 'medium'; // المستوى الافتراضي (متوسط)
             _questionCount = 5; // العدد الافتراضي
 
@@ -535,451 +632,6 @@ class _QuestionsPageState extends State<QuestionsPage>
         },
       ),
     );
-  }
-
-  Future<ExamSheet?> _showSheetPickerDialog() async {
-    // لو مفيش sheets، اطلب اسم للشيت الجديدة
-    if (ExamStore.sheets.isEmpty) {
-      final controller = TextEditingController();
-      final name = await showDialog<String>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          constraints: const BoxConstraints(maxWidth: 480),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: Text(isArabic ? 'مفيش امتحانات' : 'No Exams Yet'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                isArabic
-                    ? 'مفيش ورقة امتحان موجودة، أدخل اسم ورقة جديدة'
-                    : 'No exam sheets found. Enter a name for a new one',
-                style: TextStyle(color: Colors.grey[600], fontSize: 13),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: controller,
-                autofocus: true,
-                decoration: InputDecoration(
-                  hintText: isArabic ? 'مثال: امتحان الفصل الأول' : 'e.g. Midterm Exam',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-                onSubmitted: (v) => Navigator.pop(ctx, v.trim().isEmpty ? null : v.trim()),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: Text(isArabic ? 'إلغاء' : 'Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () => Navigator.pop(
-                ctx,
-                controller.text.trim().isEmpty ? null : controller.text.trim(),
-              ),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFF59E0B),
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-              child: Text(isArabic ? 'إنشاء' : 'Create'),
-            ),
-          ],
-        ),
-      );
-
-      if (name == null) return null;
-
-      // انشئ الـ sheet في الـ API والـ store
-      final examService = ExamService();
-      final created = await examService.create(
-        title   : name,
-        fileId  : _activeFileId,
-        fileName: _activeFileName,
-      );
-      final sheet = ExamStore.newSheet(title: name)
-        ..dbId     = (created?['id'] ?? created?['_id'])?.toString()
-        ..fileId   = _activeFileId
-        ..fileName = _activeFileName;
-
-      return sheet;
-    }
-
-    // لو في sheets، اعرضهم في bottom sheet
-    return await showModalBottomSheet<ExamSheet>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (ctx) {
-        final theme = Theme.of(ctx);
-        return Container(
-          decoration: BoxDecoration(
-            color: theme.cardColor,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-          ),
-          padding: const EdgeInsets.fromLTRB(24, 16, 24, 40),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Center(
-                child: Container(
-                  width: 40, height: 4,
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade300,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 20),
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF59E0B).withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Icon(Icons.assignment_rounded,
-                        color: Color(0xFFF59E0B), size: 22),
-                  ),
-                  const SizedBox(width: 12),
-                  Text(
-                    isArabic ? 'اختر ورقة الامتحان' : 'Choose Exam Sheet',
-                    style: theme.textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: -0.5,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              // قائمة الـ sheets
-              ConstrainedBox(
-                constraints: BoxConstraints(
-                  maxHeight: MediaQuery.of(ctx).size.height * 0.4,
-                ),
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: ExamStore.sheets.length,
-                  itemBuilder: (_, i) {
-                    final sheet = ExamStore.sheets[ExamStore.sheets.length - 1 - i];
-                    return ListTile(
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12)),
-                      leading: Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF59E0B).withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: const Icon(Icons.assignment_rounded,
-                            color: Color(0xFFF59E0B), size: 18),
-                      ),
-                      title: Text(
-                        sheet.title,
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      subtitle: Text(
-                        isArabic
-                            ? '${sheet.questions.length} سؤال'
-                            : '${sheet.questions.length} questions',
-                        style: TextStyle(fontSize: 12, color: Colors.grey[500]),
-                      ),
-                      trailing: const Icon(Icons.arrow_forward_ios_rounded,
-                          size: 14, color: Colors.grey),
-                      onTap: () async {
-                        Navigator.pop(ctx); // اغلق الـ bottom sheet
-
-                        // اطلب الاسم مباشرة بدون ما تنادي _showSheetPickerDialog تاني
-                        final controller = TextEditingController();
-                        final name = await showDialog<String>(
-                          context: context,
-                          builder: (ctx2) => AlertDialog(
-                            constraints: const BoxConstraints(maxWidth: 480),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                            title: Text(isArabic ? 'اسم الامتحان' : 'Exam Name'),
-                            content: TextField(
-                              controller: controller,
-                              autofocus: true,
-                              decoration: InputDecoration(
-                                hintText: isArabic ? 'مثال: امتحان الفصل الأول' : 'e.g. Midterm Exam',
-                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                              ),
-                              onSubmitted: (v) => Navigator.pop(ctx2, v.trim().isEmpty ? null : v.trim()),
-                            ),
-                            actions: [
-                              TextButton(
-                                onPressed: () => Navigator.pop(ctx2),
-                                child: Text(isArabic ? 'إلغاء' : 'Cancel'),
-                              ),
-                              ElevatedButton(
-                                onPressed: () => Navigator.pop(
-                                  ctx2,
-                                  controller.text.trim().isEmpty ? null : controller.text.trim(),
-                                ),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFFF59E0B),
-                                  foregroundColor: Colors.white,
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                ),
-                                child: Text(isArabic ? 'إنشاء' : 'Create'),
-                              ),
-                            ],
-                          ),
-                        );
-
-                        if (name == null || !mounted) return;
-
-                        final examService = ExamService();
-                        final created = await examService.create(
-                          title   : name,
-                          fileId  : _activeFileId,
-                          fileName: _activeFileName,
-                        );
-                        final sheet = ExamStore.newSheet(title: name)
-                          ..dbId     = (created?['id'] ?? created?['_id'])?.toString()
-                          ..fileId   = _activeFileId
-                          ..fileName = _activeFileName;
-
-                        // أضف الأسئلة للـ sheet الجديدة مباشرة
-                        if (mounted) {
-                          // رجّع الـ sheet لـ _addToSheet عن طريق Navigator
-                          Navigator.pop(context, sheet);
-                        }
-                      },
-                    );
-                  },
-                ),
-              ),
-              const Divider(height: 24),
-              // زرار إنشاء جديدة
-              ListTile(
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
-                tileColor: const Color(0xFFF59E0B).withOpacity(0.06),
-                leading: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF59E0B).withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const Icon(Icons.add_rounded,
-                      color: Color(0xFFF59E0B), size: 18),
-                ),
-                title: Text(
-                  isArabic ? 'ورقة امتحان جديدة' : 'New Exam Sheet',
-                  style: const TextStyle(
-                      fontWeight: FontWeight.bold, color: Color(0xFFF59E0B)),
-                ),
-                onTap: () async {
-                  Navigator.pop(ctx); // اغلق الـ bottom sheet الأول
-                  final newSheet = await _showSheetPickerDialog(); // افتح dialog الاسم
-                  if (newSheet != null && mounted) {
-                    Navigator.pop(context, newSheet); // مش محتاجها هنا، بس احتياطي
-                  }
-                },
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  // 1. إنشاء sheet جديدة
-  Future<ExamSheet?> _createNewSheet() async {
-    final controller = TextEditingController();
-    final name = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        constraints: const BoxConstraints(maxWidth: 480),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(isArabic ? 'اسم الامتحان' : 'Exam Name'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: InputDecoration(
-            hintText: isArabic ? 'مثال: امتحان الفصل الأول' : 'e.g. Midterm Exam',
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-          ),
-          onSubmitted: (v) => Navigator.pop(ctx, v.trim().isEmpty ? null : v.trim()),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text(isArabic ? 'إلغاء' : 'Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx,
-                controller.text.trim().isEmpty ? null : controller.text.trim()),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFF59E0B),
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            ),
-            child: Text(isArabic ? 'إنشاء' : 'Create'),
-          ),
-        ],
-      ),
-    );
-    if (name == null) return null;
-
-    final created = await ExamService().create(
-      title: name, fileId: _activeFileId, fileName: _activeFileName,
-    );
-    return ExamStore.newSheet(title: name)
-      ..dbId     = (created?['id'] ?? created?['_id'])?.toString()
-      ..fileId   = _activeFileId
-      ..fileName = _activeFileName;
-  }
-
-// 2. اختيار sheet موجودة
-  Future<ExamSheet?> _pickExistingSheet(List<Map<String, String>> questionsToAdd) async {
-    return showModalBottomSheet<ExamSheet>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (ctx) {
-        final theme = Theme.of(ctx);
-        return Container(
-          decoration: BoxDecoration(
-            color: theme.cardColor,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-          ),
-          padding: const EdgeInsets.fromLTRB(24, 16, 24, 40),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Center(child: Container(width: 40, height: 4,
-                  decoration: BoxDecoration(color: Colors.grey.shade300,
-                      borderRadius: BorderRadius.circular(2)))),
-              const SizedBox(height: 20),
-              Row(children: [
-                Container(padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                        color: const Color(0xFFF59E0B).withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(12)),
-                    child: const Icon(Icons.assignment_rounded,
-                        color: Color(0xFFF59E0B), size: 22)),
-                const SizedBox(width: 12),
-                Text(isArabic ? 'اختر ورقة الامتحان' : 'Choose Exam Sheet',
-                    style: theme.textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.bold)),
-              ]),
-              const SizedBox(height: 16),
-              ConstrainedBox(
-                constraints: BoxConstraints(
-                    maxHeight: MediaQuery.of(ctx).size.height * 0.4),
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: ExamStore.sheets.length,
-                  itemBuilder: (_, i) {
-                    final sheet = ExamStore.sheets[ExamStore.sheets.length - 1 - i];
-                    return ListTile(
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12)),
-                      leading: Container(padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                              color: const Color(0xFFF59E0B).withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(10)),
-                          child: const Icon(Icons.assignment_rounded,
-                              color: Color(0xFFF59E0B), size: 18)),
-                      title: Text(sheet.title,
-                          style: const TextStyle(fontWeight: FontWeight.w600)),
-                      subtitle: Text(
-                          isArabic ? '${sheet.questions.length} سؤال'
-                              : '${sheet.questions.length} questions',
-                          style: TextStyle(fontSize: 12, color: Colors.grey[500])),
-                      trailing: const Icon(Icons.arrow_forward_ios_rounded,
-                          size: 14, color: Colors.grey),
-                      onTap: () {
-                        debugPrint('picked: ${sheet.title}');
-                        Navigator.pop(ctx, sheet);
-                      },
-                    );
-                  },
-                ),
-              ),
-              const Divider(height: 24),
-              ListTile(
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                tileColor: const Color(0xFFF59E0B).withOpacity(0.06),
-                leading: Container(padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                        color: const Color(0xFFF59E0B).withOpacity(0.15),
-                        borderRadius: BorderRadius.circular(10)),
-                    child: const Icon(Icons.add_rounded,
-                        color: Color(0xFFF59E0B), size: 18)),
-                title: Text(isArabic ? 'ورقة امتحان جديدة' : 'New Exam Sheet',
-                    style: const TextStyle(fontWeight: FontWeight.bold,
-                        color: Color(0xFFF59E0B))),
-                onTap: () async {
-                  debugPrint('new sheet tapped');
-                  Navigator.pop(ctx);
-                  final newSheet = await _createNewSheet();
-                  debugPrint('new sheet created: ${newSheet?.title}');
-                  if (newSheet != null && mounted) {
-                    await _doAddToSheet(newSheet, questionsToAdd);
-                  }
-                },
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-// 3. الإضافة الفعلية
-  Future<void> _doAddToSheet(ExamSheet sheet, List<Map<String, String>> questionsToAdd) async {
-    ExamStore.setActive(sheet);
-    for (final q in questionsToAdd) {
-      ExamStore.addQuestion(ExamQuestion(
-        id        : DateTime.now().microsecondsSinceEpoch.toString() +
-            (q['question'] ?? '').hashCode.toString(),
-        question  : q['question'] ?? '',
-        answer    : q['answer']   ?? '',
-        type      : q['type']     ?? '',
-        difficulty: q['difficulty'] ?? '',
-      ));
-    }
-    if (sheet.dbId != null) {
-      await ExamService().update(
-        sheet.dbId!,
-        ExamStore.questions.map((q) => q.toMap()).toList(),
-      );
-    }
-    if (mounted) {
-      setState(() {});
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Row(children: [
-          const Icon(Icons.assignment_turned_in_rounded, color: Colors.white, size: 20),
-          const SizedBox(width: 12),
-          Text(isArabic ? 'تمت الإضافة لـ "${sheet.title}"'
-              : 'Added to "${sheet.title}"'),
-        ]),
-        backgroundColor: const Color(0xFFF59E0B),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        duration: const Duration(seconds: 2),
-      ));
-    }
-  }
-
-// 4. الدالة الرئيسية
-  List<Map<String, String>>? _pendingQuestions;
-
-  Future<void> _addToSheet(List<Map<String, String>> questionsToAdd) async {
-
-    if (ExamStore.sheets.isEmpty) {
-      final sheet = await _createNewSheet();
-      if (sheet != null) await _doAddToSheet(sheet, questionsToAdd);
-    } else {
-      final sheet = await _pickExistingSheet(questionsToAdd);
-      if (sheet != null) await _doAddToSheet(sheet, questionsToAdd);
-    }
-
   }
 
   // ── دالة الحماية والتحقق التنبيهي لمنع المغادرة المفاجئة ──
@@ -1084,8 +736,8 @@ class _QuestionsPageState extends State<QuestionsPage>
                   _totalPages > 0
                       ? '${isArabic ? 'إجمالي صفحات المستند' : 'Total document pages'}: $_totalPages'
                       : (isArabic
-                      ? 'تعذر تحديد عدد الصفحات'
-                      : 'Page count unavailable'),
+                            ? 'تعذر تحديد عدد الصفحات'
+                            : 'Page count unavailable'),
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 14,
@@ -1524,15 +1176,15 @@ class _QuestionsPageState extends State<QuestionsPage>
                           ),
                           trailing: isSelected
                               ? const Icon(
-                            Icons.check_circle_rounded,
-                            color: Color(0xFF6366F1),
-                            size: 22,
-                          )
+                                  Icons.check_circle_rounded,
+                                  color: Color(0xFF6366F1),
+                                  size: 22,
+                                )
                               : null,
                           onTap: () {
                             setState(
-                                  () => _selectedQuestionType =
-                              type['value'] as String,
+                              () => _selectedQuestionType =
+                                  type['value'] as String,
                             );
                             Navigator.pop(ctx);
                           },
@@ -1591,6 +1243,9 @@ class _QuestionsPageState extends State<QuestionsPage>
           },
         );
         if (response.data['success'] == true) {
+          debugPrint('=== QUESTIONS RAW RESPONSE ===');
+          debugPrint(response.data.toString());
+          debugPrint('==============================');
           final raw = response.data['data']['questions'];
           if (raw is String && raw.trim().isNotEmpty) return raw;
         }
@@ -1738,57 +1393,57 @@ class _QuestionsPageState extends State<QuestionsPage>
     const baseColor = Color(0xFF6366F1);
     return MarkdownStyleSheet(
       h1:
-      theme.textTheme.headlineMedium?.copyWith(
-        fontWeight: FontWeight.bold,
-        color: baseColor,
-        letterSpacing: -0.5,
-        height: 1.4,
-      ) ??
+          theme.textTheme.headlineMedium?.copyWith(
+            fontWeight: FontWeight.bold,
+            color: baseColor,
+            letterSpacing: -0.5,
+            height: 1.4,
+          ) ??
           const TextStyle(
             fontSize: 24,
             fontWeight: FontWeight.bold,
             color: baseColor,
           ),
       h2:
-      theme.textTheme.titleLarge?.copyWith(
-        fontWeight: FontWeight.bold,
-        color: const Color(0xFF8B5CF6),
-        letterSpacing: -0.3,
-        height: 1.4,
-      ) ??
+          theme.textTheme.titleLarge?.copyWith(
+            fontWeight: FontWeight.bold,
+            color: const Color(0xFF8B5CF6),
+            letterSpacing: -0.3,
+            height: 1.4,
+          ) ??
           const TextStyle(
             fontSize: 20,
             fontWeight: FontWeight.bold,
             color: Color(0xFF8B5CF6),
           ),
       h3:
-      theme.textTheme.titleMedium?.copyWith(
-        fontWeight: FontWeight.w600,
-        color: baseColor,
-        height: 1.4,
-      ) ??
+          theme.textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w600,
+            color: baseColor,
+            height: 1.4,
+          ) ??
           const TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.w600,
             color: baseColor,
           ),
       p:
-      theme.textTheme.bodyMedium?.copyWith(
-        height: 1.7,
-        letterSpacing: 0.1,
-      ) ??
+          theme.textTheme.bodyMedium?.copyWith(
+            height: 1.7,
+            letterSpacing: 0.1,
+          ) ??
           const TextStyle(fontSize: 14, height: 1.7),
       listBullet:
-      theme.textTheme.bodyMedium?.copyWith(
-        height: 1.7,
-        color: const Color(0xFF10B981),
-      ) ??
+          theme.textTheme.bodyMedium?.copyWith(
+            height: 1.7,
+            color: const Color(0xFF10B981),
+          ) ??
           const TextStyle(fontSize: 14, color: Color(0xFF10B981)),
       strong:
-      theme.textTheme.bodyMedium?.copyWith(
-        fontWeight: FontWeight.bold,
-        color: baseColor,
-      ) ??
+          theme.textTheme.bodyMedium?.copyWith(
+            fontWeight: FontWeight.bold,
+            color: baseColor,
+          ) ??
           const TextStyle(fontWeight: FontWeight.bold, color: baseColor),
       code: const TextStyle(
         fontFamily: 'monospace',
@@ -1803,10 +1458,10 @@ class _QuestionsPageState extends State<QuestionsPage>
       ),
       codeblockPadding: const EdgeInsets.all(16),
       blockquote:
-      theme.textTheme.bodyMedium?.copyWith(
-        fontStyle: FontStyle.italic,
-        color: Colors.grey[600],
-      ) ??
+          theme.textTheme.bodyMedium?.copyWith(
+            fontStyle: FontStyle.italic,
+            color: Colors.grey[600],
+          ) ??
           const TextStyle(fontStyle: FontStyle.italic),
       blockquoteDecoration: BoxDecoration(
         border: const Border(
@@ -1831,13 +1486,13 @@ class _QuestionsPageState extends State<QuestionsPage>
         vertical: 6,
       ),
       tableHead:
-      theme.textTheme.bodyMedium?.copyWith(
-        fontWeight: FontWeight.bold,
-        color: baseColor,
-      ) ??
+          theme.textTheme.bodyMedium?.copyWith(
+            fontWeight: FontWeight.bold,
+            color: baseColor,
+          ) ??
           const TextStyle(fontWeight: FontWeight.bold, color: baseColor),
       tableBody:
-      theme.textTheme.bodySmall?.copyWith(height: 1.5) ??
+          theme.textTheme.bodySmall?.copyWith(height: 1.5) ??
           const TextStyle(fontSize: 12, height: 1.5),
     );
   }
@@ -1906,7 +1561,7 @@ class _QuestionsPageState extends State<QuestionsPage>
           // ── حماية الشاشة من الخروج المفاجئ أثناء التوليد ──
           child: PopScope(
             canPop:
-            !_isGenerating, // يسمح بالخروج التلقائي فقط لو مش شغال توليد
+                !_isGenerating, // يسمح بالخروج التلقائي فقط لو مش شغال توليد
             onPopInvokedWithResult: (didPop, result) async {
               if (didPop) return;
               final shouldPop = await _onWillPop();
@@ -1955,12 +1610,7 @@ class _QuestionsPageState extends State<QuestionsPage>
                           onPressed: () => Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (_) => ExamListPage(
-                                isArabic: isArabic,
-                                filesService: widget.filesService,
-                                currentFileId: _activeFileId,
-                                currentFileName: _activeFileName,
-                              ),
+                              builder: (_) => ExamPage(isArabic: isArabic),
                             ),
                           ).then((_) => setState(() {})),
                           icon: const Icon(
@@ -2043,9 +1693,9 @@ class _QuestionsPageState extends State<QuestionsPage>
                                   loc.questionsGeneratorTitle,
                                   style: theme.textTheme.headlineMedium
                                       ?.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                    letterSpacing: -0.5,
-                                  ),
+                                        fontWeight: FontWeight.bold,
+                                        letterSpacing: -0.5,
+                                      ),
                                 ),
                                 const SizedBox(height: 8),
                                 Text(
@@ -2100,7 +1750,7 @@ class _QuestionsPageState extends State<QuestionsPage>
                                                 0xFF6366F1,
                                               ).withOpacity(0.2),
                                               borderRadius:
-                                              BorderRadius.circular(12),
+                                                  BorderRadius.circular(12),
                                             ),
                                             child: const Icon(
                                               Icons.description_rounded,
@@ -2117,9 +1767,9 @@ class _QuestionsPageState extends State<QuestionsPage>
                                                       : 'No file selected'),
                                               style: theme.textTheme.bodyMedium
                                                   ?.copyWith(
-                                                fontWeight: FontWeight.bold,
-                                                letterSpacing: -0.3,
-                                              ),
+                                                    fontWeight: FontWeight.bold,
+                                                    letterSpacing: -0.3,
+                                                  ),
                                               maxLines: 1,
                                               overflow: TextOverflow.ellipsis,
                                             ),
@@ -2185,9 +1835,9 @@ class _QuestionsPageState extends State<QuestionsPage>
                                       loc.configuration,
                                       style: theme.textTheme.titleLarge
                                           ?.copyWith(
-                                        fontWeight: FontWeight.bold,
-                                        letterSpacing: -0.5,
-                                      ),
+                                            fontWeight: FontWeight.bold,
+                                            letterSpacing: -0.5,
+                                          ),
                                     ),
                                   ],
                                 ),
@@ -2284,7 +1934,7 @@ class _QuestionsPageState extends State<QuestionsPage>
                                       groupValue: _selectedDifficulty,
                                       color: d['color'] as Color,
                                       onSelected: (val) => setState(
-                                            () => _selectedDifficulty = val,
+                                        () => _selectedDifficulty = val,
                                       ),
                                     );
                                   }).toList(),
@@ -2375,8 +2025,8 @@ class _QuestionsPageState extends State<QuestionsPage>
                                   onTap: _isGenerating
                                       ? null
                                       : () async {
-                                    await _showPageRangeDialog();
-                                  },
+                                          await _showPageRangeDialog();
+                                        },
                                   child: SizedBox(
                                     width: double.infinity,
                                     child: AnimatedContainer(
@@ -2389,35 +2039,35 @@ class _QuestionsPageState extends State<QuestionsPage>
                                       decoration: BoxDecoration(
                                         gradient: _isGenerating
                                             ? LinearGradient(
-                                          colors: [
-                                            Colors.grey.shade400,
-                                            Colors.grey.shade500,
-                                          ],
-                                        )
+                                                colors: [
+                                                  Colors.grey.shade400,
+                                                  Colors.grey.shade500,
+                                                ],
+                                              )
                                             : const LinearGradient(
-                                          begin: Alignment.topLeft,
-                                          end: Alignment.bottomRight,
-                                          colors: [
-                                            Color(0xFF6366F1),
-                                            Color(0xFF8B5CF6),
-                                          ],
-                                        ),
+                                                begin: Alignment.topLeft,
+                                                end: Alignment.bottomRight,
+                                                colors: [
+                                                  Color(0xFF6366F1),
+                                                  Color(0xFF8B5CF6),
+                                                ],
+                                              ),
                                         borderRadius: BorderRadius.circular(20),
                                         boxShadow: _isGenerating
                                             ? []
                                             : [
-                                          BoxShadow(
-                                            color: const Color(
-                                              0xFF6366F1,
-                                            ).withOpacity(0.4),
-                                            blurRadius: 15,
-                                            offset: const Offset(0, 8),
-                                          ),
-                                        ],
+                                                BoxShadow(
+                                                  color: const Color(
+                                                    0xFF6366F1,
+                                                  ).withOpacity(0.4),
+                                                  blurRadius: 15,
+                                                  offset: const Offset(0, 8),
+                                                ),
+                                              ],
                                       ),
                                       child: Row(
                                         mainAxisAlignment:
-                                        MainAxisAlignment.center,
+                                            MainAxisAlignment.center,
                                         children: [
                                           if (_isGenerating)
                                             const SizedBox(
@@ -2426,9 +2076,9 @@ class _QuestionsPageState extends State<QuestionsPage>
                                               child: CircularProgressIndicator(
                                                 strokeWidth: 2.5,
                                                 valueColor:
-                                                AlwaysStoppedAnimation(
-                                                  Colors.white,
-                                                ),
+                                                    AlwaysStoppedAnimation(
+                                                      Colors.white,
+                                                    ),
                                               ),
                                             )
                                           else
@@ -2465,15 +2115,15 @@ class _QuestionsPageState extends State<QuestionsPage>
                         if (_generatedQuestions.isNotEmpty || _isGenerating)
                           SlideTransition(
                             position:
-                            Tween<Offset>(
-                              begin: const Offset(0, 0.3),
-                              end: Offset.zero,
-                            ).animate(
-                              CurvedAnimation(
-                                parent: _animationController,
-                                curve: Curves.easeOutCubic,
-                              ),
-                            ),
+                                Tween<Offset>(
+                                  begin: const Offset(0, 0.3),
+                                  end: Offset.zero,
+                                ).animate(
+                                  CurvedAnimation(
+                                    parent: _animationController,
+                                    curve: Curves.easeOutCubic,
+                                  ),
+                                ),
                             child: Container(
                               decoration: BoxDecoration(
                                 color: theme.cardColor,
@@ -2513,15 +2163,70 @@ class _QuestionsPageState extends State<QuestionsPage>
                                         loc.generatedQuestions,
                                         style: theme.textTheme.titleLarge
                                             ?.copyWith(
-                                          fontWeight: FontWeight.bold,
-                                          letterSpacing: -0.5,
-                                        ),
+                                              fontWeight: FontWeight.bold,
+                                              letterSpacing: -0.5,
+                                            ),
                                       ),
                                       const Spacer(),
                                       if (!_isGenerating &&
                                           _generatedQuestions.isNotEmpty)
                                         TextButton.icon(
-                                          onPressed: () => _addToSheet(_generatedQuestions),
+                                          onPressed: () {
+                                            for (final q
+                                                in _generatedQuestions) {
+                                              ExamStore.addQuestion(
+                                                ExamQuestion(
+                                                  id:
+                                                      DateTime.now()
+                                                          .millisecondsSinceEpoch
+                                                          .toString() +
+                                                      (q['question'] ?? '')
+                                                          .hashCode
+                                                          .toString(),
+                                                  question: q['question'] ?? '',
+                                                  answer: q['answer'] ?? '',
+                                                  type: q['type'] ?? '',
+                                                  difficulty:
+                                                      q['difficulty'] ?? '',
+                                                ),
+                                              );
+                                            }
+                                            setState(() {});
+                                            ScaffoldMessenger.of(
+                                              context,
+                                            ).showSnackBar(
+                                              SnackBar(
+                                                content: Row(
+                                                  children: [
+                                                    const Icon(
+                                                      Icons
+                                                          .assignment_turned_in_rounded,
+                                                      color: Colors.white,
+                                                      size: 20,
+                                                    ),
+                                                    const SizedBox(width: 12),
+                                                    Text(
+                                                      isArabic
+                                                          ? 'تمت إضافة الكل للامتحان'
+                                                          : 'All added to exam',
+                                                    ),
+                                                  ],
+                                                ),
+                                                backgroundColor: const Color(
+                                                  0xFFF59E0B,
+                                                ),
+                                                behavior:
+                                                    SnackBarBehavior.floating,
+                                                shape: RoundedRectangleBorder(
+                                                  borderRadius:
+                                                      BorderRadius.circular(12),
+                                                ),
+                                                duration: const Duration(
+                                                  seconds: 2,
+                                                ),
+                                              ),
+                                            );
+                                          },
                                           icon: const Icon(
                                             Icons.playlist_add_rounded,
                                             size: 16,
@@ -2541,7 +2246,7 @@ class _QuestionsPageState extends State<QuestionsPage>
                                             ).withOpacity(0.1),
                                             shape: RoundedRectangleBorder(
                                               borderRadius:
-                                              BorderRadius.circular(12),
+                                                  BorderRadius.circular(12),
                                             ),
                                             padding: const EdgeInsets.symmetric(
                                               horizontal: 10,
@@ -2568,13 +2273,13 @@ class _QuestionsPageState extends State<QuestionsPage>
                                     )
                                   else
                                     ..._generatedQuestions.map(
-                                          (question) => QuestionItem(
+                                      (question) => QuestionItem(
                                         theme: theme,
                                         question: question['question'] ?? '',
                                         answer: question['answer'] ?? '',
                                         rawType: question['type'] ?? '',
                                         rawDifficulty:
-                                        question['difficulty'] ?? '',
+                                            question['difficulty'] ?? '',
                                         typeLabel: locByKey(
                                           loc,
                                           question['type'] ?? '',
@@ -2587,7 +2292,26 @@ class _QuestionsPageState extends State<QuestionsPage>
                                         markdownStyle: _buildMarkdownStyle(
                                           theme,
                                         ),
-                                        onAddToExam: () => _addToSheet([question]),
+                                        onAddToExam: () {
+                                          ExamStore.addQuestion(
+                                            ExamQuestion(
+                                              id:
+                                                  DateTime.now()
+                                                      .millisecondsSinceEpoch
+                                                      .toString() +
+                                                  (question['question'] ?? '')
+                                                      .hashCode
+                                                      .toString(),
+                                              question:
+                                                  question['question'] ?? '',
+                                              answer: question['answer'] ?? '',
+                                              type: question['type'] ?? '',
+                                              difficulty:
+                                                  question['difficulty'] ?? '',
+                                            ),
+                                          );
+                                          setState(() {});
+                                        },
                                         isInExam: ExamStore.containsNormalized(
                                           question['question'] ?? '',
                                         ),
@@ -2760,7 +2484,149 @@ class _ExportOptionTile extends StatelessWidget {
     );
   }
 }
+// ─────────────────────────────────────────────────────────────
+//  _preprocessAnswerLatex — تلف الـ bare LaTeX في $$ قبل العرض
+// ─────────────────────────────────────────────────────────────
 
+String _splitCodeLine(String line) {
+  return line.replaceAllMapped(
+    RegExp(r'(\))\s+(print\s*\()'),
+    (m) => '${m[1]}\n${m[2]}',
+  ).replaceAllMapped(
+    RegExp(r'(\))\s+(print\s*\(\s*\))'),
+    (m) => '${m[1]}\n${m[2]}',
+  );
+}
+
+String _fixCodeFences(String text) {
+  final lines  = text.split('\n');
+  final result = <String>[];
+  bool inFence = false;
+
+  for (final line in lines) {
+    if (line.trim().startsWith('```')) {
+      inFence = !inFence;
+      result.add(line);
+      continue;
+    }
+    if (inFence) {
+      final fixed = _splitCodeLine(line);
+      result.addAll(fixed.split('\n'));
+    } else {
+      result.add(line);
+    }
+  }
+  return result.join('\n');
+}
+
+// ─────────────────────────────────────────────────────────────
+//  _preprocessAnswerLatex  [v23-fix]
+// ─────────────────────────────────────────────────────────────
+
+String _preprocessAnswerLatex(String text) {
+  // [fix] وصّل السطور المكسورة قبل أي معالجة
+  text = text.replaceAllMapped(
+    RegExp(r'(\w\^\{[^}\n]*)\n([^}\n]*\})'),
+    (m) => '${m[1]}${m[2]}',
+  );
+  text = text.replaceAllMapped(
+    RegExp(r'(\\\w+\{[^}\n]*)\n([^}\n]*\})'),
+    (m) => '${m[1]}${m[2]}',
+  );
+
+  final lines  = text.split('\n');
+  final result = <String>[];
+  bool inFence = false;
+
+  for (int i = 0; i < lines.length; i++) {
+    final line    = lines[i];
+    final trimmed = line.trim();
+
+    if (trimmed.startsWith('```')) {
+      inFence = !inFence;
+      result.add(line);
+      continue;
+    }
+    if (inFence) { result.add(line); continue; }
+
+    // سطر $ وحده أو $$ وحده → احذفه
+    if (trimmed == r'$' || trimmed == r'$$') continue;
+    if (RegExp(r'^\$\s*$').hasMatch(trimmed)) continue;
+
+    // [fix] سطر بيبدأ بـ -x} أو closing brace → وصّله بالسطر السابق
+    if (RegExp(r'^-?[a-zA-Z0-9]\s*\}').hasMatch(trimmed) && result.isNotEmpty) {
+      for (int j = result.length - 1; j >= 0; j--) {
+        if (result[j].trim().isNotEmpty) {
+          result[j] = result[j].trimRight() + trimmed;
+          break;
+        }
+      }
+      continue;
+    }
+
+    // [fix] سطر فيه $ مخلوط مع \command برا الـ $ → لفّ الكل في $$
+    if (trimmed.contains(r'$') && RegExp(r'\\[a-zA-Z]+').hasMatch(trimmed)) {
+      final hasBare = _hasBareLatexOutsideDelimiters(trimmed);
+      if (hasBare) {
+        final stripped = _stripOrphanDollars(trimmed);
+        if (stripped.isNotEmpty) {
+          result.add('\$\$$stripped\$\$');
+          continue;
+        }
+      }
+    }
+
+    // سطر بيبدأ بـ $ ويحتوي على LaTeX مخلوط
+    if (trimmed.startsWith(r'$') && !trimmed.startsWith(r'$$')) {
+      final inner = trimmed.replaceFirst(RegExp(r'^\$\s*'), '').trim();
+      if (inner.isNotEmpty && !inner.startsWith(r'$')) {
+        result.add('\$\$$inner\$\$');
+        continue;
+      }
+    }
+
+    if (trimmed.startsWith(r'$$') || trimmed.endsWith(r'$$')) {
+      result.add(line);
+      continue;
+    }
+
+    // سطر بيبدأ بـ = أو \ مباشرة → لفّه في $$
+    if ((trimmed.startsWith('=') || trimmed.startsWith(r'\')) &&
+        trimmed.isNotEmpty &&
+        !trimmed.contains(r'$')) {
+      result.add('\$\$$trimmed\$\$');
+      continue;
+    }
+
+    final hasLatexCmd = RegExp(
+      r'\\(?:phi|psi|chi|omega|alpha|beta|gamma|delta|'
+      r'lambda|mu|sigma|theta|pi|int|sum|frac|sqrt|left|right|'
+      r'implies|iff|forall|exists|nabla|partial|cdot|times|'
+      r'text|mathbf|mathrm|vec|hat|bar|dot|e)\b',
+    ).hasMatch(trimmed);
+
+    final alreadyWrapped = trimmed.contains(r'$');
+    final isCodeLine = RegExp(
+      r'^\s*(?:def |class |import |function |const |let |var |'
+      r'#include|cout|printf|public |private )',
+    ).hasMatch(trimmed);
+
+    final hasNormalText = RegExp(r'[A-Za-z\u0600-\u06FF]{5,}').hasMatch(trimmed);
+
+  if (hasLatexCmd && !alreadyWrapped && !isCodeLine 
+        && !hasNormalText   // ← الحاجة دي بس اللي ناقصة
+        && trimmed.isNotEmpty) {
+        result.add('\$\$$trimmed\$\$');
+        continue;
+    }
+
+    result.add(line);
+  }
+
+  return result.join('\n');
+}
+
+// ─────────────────────────────────────
 // ─────────────────────────────────────────────────────────────
 //  QuestionItem Widget
 // ─────────────────────────────────────────────────────────────
@@ -2813,14 +2679,14 @@ class _QuestionItemState extends State<QuestionItem> {
           letterSpacing: -0.3,
           height: 1.5,
         ) ??
-            const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, height: 1.5);
+        const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, height: 1.5);
 
     final answerBodyStyle =
-    (theme.textTheme.bodyMedium ?? const TextStyle(fontSize: 14)).copyWith(
-      height: 1.7,
-      letterSpacing: 0.1,
-      fontSize: theme.textTheme.bodyMedium?.fontSize ?? 14.0,
-    );
+        (theme.textTheme.bodyMedium ?? const TextStyle(fontSize: 14)).copyWith(
+          height: 1.7,
+          letterSpacing: 0.1,
+          fontSize: theme.textTheme.bodyMedium?.fontSize ?? 14.0,
+        );
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -2889,7 +2755,7 @@ class _QuestionItemState extends State<QuestionItem> {
 
             // Question
             MathMarkdown(
-              data: widget.question,
+  data: widget.question,
               style: questionBodyStyle,
               styleSheet: MarkdownStyleSheet.fromTheme(
                 Theme.of(context),
@@ -3010,7 +2876,7 @@ class _QuestionItemState extends State<QuestionItem> {
                     ],
                   ),
                   child: MathMarkdown(
-                    data: widget.answer,
+  data: widget.answer,
                     style: answerBodyStyle,
                     styleSheet: MarkdownStyleSheet.fromTheme(
                       Theme.of(context),
@@ -3029,3 +2895,4 @@ class _QuestionItemState extends State<QuestionItem> {
     );
   }
 }
+

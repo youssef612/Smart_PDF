@@ -1,5 +1,5 @@
 // lib/widgets/math_markdown2.dart
-// v19 — fixed: raw LaTeX in matching/listing, inline overflow, orphan sentence fragments
+// v20 — fixed: wrap overflow, Volterra split, raw LaTeX in backticks
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -8,12 +8,6 @@ import 'package:flutter_math_fork/flutter_math.dart';
 import 'package:flutter_highlight/flutter_highlight.dart';
 import 'package:flutter_highlight/themes/atom-one-dark.dart';
 import 'package:url_launcher/url_launcher.dart';
-
-// ─────────────────────────────────────────────────────────────
-//  FIX 1: Raw LaTeX detector & converter
-//  بيحول الـ raw LaTeX زي \phi(x) = ... اللي مش متلفوف في $
-//  لـ $...$  عشان يتعرض كـ math مش كنص أحمر
-// ─────────────────────────────────────────────────────────────
 
 String _convertRawLatexLines(String text) {
   final lines = text.split('\n');
@@ -33,8 +27,6 @@ String _convertRawLatexLines(String text) {
       continue;
     }
 
-    // بيشوف لو السطر بيبدأ بـ B1. أو B2. أو رقم. أو حرف. ويحتوي على \command
-    // ده بيكون raw LaTeX في listing زي الـ matching questions
     final listingMatch = RegExp(
       r'^([A-Z]\d+\.\s+|[Bb]\d+\.\s+|\d+\.\s+)(.+)$',
     ).firstMatch(trimmed);
@@ -55,7 +47,6 @@ String _convertRawLatexLines(String text) {
       }
     }
 
-    // سطور زي "B1. \phi(x) = ..." بدون prefix
     final rawLatexLine = RegExp(
       r'^([A-Z]\d+\.?|[Bb]\d+\.?)\s+(.+)$',
     ).firstMatch(trimmed);
@@ -80,10 +71,6 @@ String _convertRawLatexLines(String text) {
 
   return result.join('\n');
 }
-
-// ─────────────────────────────────────────────────────────────
-//  Pre-processing
-// ─────────────────────────────────────────────────────────────
 
 String _protectBlockMathNewlines(String text) {
   return text.replaceAllMapped(
@@ -110,17 +97,13 @@ String _normalizeDelimiters(String text) {
   return text;
 }
 
+// FIX: (?<![A-Za-z0-9]) يمنع تقسيم كلمة زي "Volterra" لو قبلها space
 String _fixOptionsLineBreaks(String text) {
   return text.replaceAllMapped(
-    RegExp(r'(?<!\n)([A-D])\)\s+'),
+    RegExp(r'(?<!\n)(?<![A-Za-z0-9])([A-D])\)\s+'),
     (m) => '\n${m[1]}) ',
   );
 }
-
-// ─────────────────────────────────────────────────────────────
-//  FIX 3: Enhanced orphan line merger
-//  بيمسك السطور اللي بتبدأ بـ . أو , أو ; ويضمها للسطر السابق
-// ─────────────────────────────────────────────────────────────
 
 String _mergeOrphanLines(String text) {
   final lines = text.split('\n');
@@ -131,14 +114,12 @@ String _mergeOrphanLines(String text) {
       result.add('');
       continue;
     }
-    // حماية سطور الجداول من الـ merge
     if (trimmed.startsWith('|')) {
       result.add(raw);
       continue;
     }
 
-    // FIX 3: سطر بيبدأ بـ . أو , أو ; → ضمّه للسطر السابق
-    final startsWithPunct = RegExp(r'^[.,;،]\s*').hasMatch(trimmed);
+    final startsWithPunct = RegExp(r'^[.,;،]\s*\S').hasMatch(trimmed);
     if (startsWithPunct && result.isNotEmpty) {
       for (int i = result.length - 1; i >= 0; i--) {
         if (result[i].trim().isNotEmpty) {
@@ -149,13 +130,13 @@ String _mergeOrphanLines(String text) {
       continue;
     }
 
-    final isPunct = RegExp(r'^[.,;:\-]+$').hasMatch(trimmed);
+    final isPunct = RegExp(r'^[.,;:\-\(\)]+$').hasMatch(trimmed);
     final isGreekOrMath =
         RegExp(r'^[\u0370-\u03FF\u2200-\u22FF\u03C6\u03BB]+$').hasMatch(trimmed);
     final isShortVar = !isGreekOrMath &&
-        ((trimmed.length <= 2 &&
+        ((trimmed.length <= 3 &&
                 !trimmed.contains(r'$') &&
-                RegExp(r'^[\w\u0600-\u06FF]+$').hasMatch(trimmed)) ||
+                RegExp(r'^[\w\u0600-\u06FF.,;:]+$').hasMatch(trimmed)) ||
             (RegExp(r'^[\w\u0600-\u06FF\(\)\,\.]+$').hasMatch(trimmed) &&
                 trimmed.length <= 5));
     final isShortMath =
@@ -238,33 +219,109 @@ String _convertUnicodeMath(String text) {
   return buffer.toString();
 }
 
-// ─────────────────────────────────────────────────────────────
-//  Table protection
-// ─────────────────────────────────────────────────────────────
+// FIX: حوّل backtick spans اللي فيها LaTeX commands لـ $...$
+// بنستخدم String عادية مش raw string عشان نتجنب مشكلة الـ backtick في Dart
+String _convertBacktickLatex(String text) {
+  final buf = StringBuffer();
+  int i = 0;
+  while (i < text.length) {
+    if (text[i] == '`') {
+      int end = text.indexOf('`', i + 1);
+      if (end == -1) { buf.write(text[i]); i++; continue; }
+      final inner = text.substring(i + 1, end);
+      final hasLatex = RegExp(
+        r'\\(?:phi|psi|lambda|mu|sigma|theta|alpha|beta|gamma|delta|'
+        r'omega|pi|int|frac|sqrt|sum|prod|partial|nabla|cdot|times|'
+        r'mathbf|left|right|leq|geq|neq|infty|prime)',
+      ).hasMatch(inner);
+      if (hasLatex && inner.length >= 3) {
+        final cleaned = inner.replaceAll('\\\\', '\\');
+        buf.write('\$$cleaned\$');
+      } else {
+        buf.write('`$inner`');
+      }
+      i = end + 1;
+    } else {
+      buf.write(text[i]);
+      i++;
+    }
+  }
+  return buf.toString();
+}
+
+
+// حوّل \\command و \\( اللي بيجي من الـ backend لـ $...$
+String _fixEscapedLatex(String text) {
+  const latexCmds = [
+    'phi', 'psi', 'lambda', 'mu', 'sigma', 'theta', 'alpha', 'beta',
+    'gamma', 'delta', 'omega', 'pi', 'frac', 'sqrt', 'sum', 'int',
+    'prod', 'partial', 'nabla', 'cdot', 'times', 'mathbf',
+    'leq', 'geq', 'neq', 'infty', 'prime',
+  ];
+  for (final cmd in latexCmds) {
+    text = text.replaceAll('\\\\' + cmd, r'$' + '\\' + cmd + r'$');
+  }
+  return text;
+}
+
 
 final _tableBlockPattern = RegExp(
   r'(?:^|\n)((?:[ \t]*\|[^\n]*\n)+[ \t]*\|[ \t]*[-:| \t]+[-| \t]*\|?[^\n]*(?:\n[ \t]*\|[^\n]*)*)',
   multiLine: true,
 );
 
-// ─────────────────────────────────────────────────────────────
-//  Main preprocess
-// ─────────────────────────────────────────────────────────────
+
+String _escapeLooseUnderscores(String text) {
+  final buf = StringBuffer();
+  int i = 0;
+  while (i < text.length) {
+    if (i + 1 < text.length && text[i] == r'$' && text[i + 1] == r'$') {
+      final end = text.indexOf(r'$$', i + 2);
+      if (end != -1) { buf.write(text.substring(i, end + 2)); i = end + 2; continue; }
+    }
+    if (text[i] == r'$') {
+      final end = text.indexOf(r'$', i + 1);
+      if (end != -1) { buf.write(text.substring(i, end + 1)); i = end + 1; continue; }
+    }
+    if (text[i] == '`') {
+      final end = text.indexOf('`', i + 1);
+      if (end != -1) { buf.write(text.substring(i, end + 1)); i = end + 1; continue; }
+    }
+    if (text[i] == '_') {
+      buf.write(r'\_');
+      i++;
+      continue;
+    }
+    buf.write(text[i]);
+    i++;
+  }
+  return buf.toString();
+}
 
 String _preprocess(String raw) {
+  raw = _convertBacktickLatex(raw);
+  raw = _fixEscapedLatex(raw);
   raw = _convertUnicodeMath(raw);
   raw = _normalizeDelimiters(raw);
-  raw = _convertRawLatexLines(raw); // FIX 1: convert raw LaTeX in listings
+  raw = _convertRawLatexLines(raw);
   raw = _protectBlockMathNewlines(raw);
+  // دمج السطور اللي بتبدأ بـ punct مع السطر اللي قبلها
+  // لو السطر بيبدأ بـ . أو , أو ; الصقه بالسطر السابق وشيل الـ punct
+  raw = raw.replaceAllMapped(
+    RegExp(r'\n([.،;]+)\s+([A-Z\u0600-\u06FF])', multiLine: true),
+    (m) => ' \${m[2]}',
+  );
+  // لو بيبدأ بـ , أو ) الصقه بالسطر السابق مع الـ punct
+  raw = raw.replaceAllMapped(
+    RegExp(r'\n([,);:]+\s?)', multiLine: true),
+    (m) => '\${m[1]}',
+  );
   raw = _fixOptionsLineBreaks(raw);
-  raw = _mergeOrphanLines(raw);     // FIX 3: merge orphan punctuation lines
+  raw = _mergeOrphanLines(raw);
+  raw = _escapeLooseUnderscores(raw);
   raw = raw.replaceAll(RegExp(r'\n{3,}'), '\n\n');
   return raw.trim();
 }
-
-// ─────────────────────────────────────────────────────────────
-//  Code block extractor
-// ─────────────────────────────────────────────────────────────
 
 class _Segment {
   final String content;
@@ -292,10 +349,6 @@ List<_Segment> _splitCodeBlocks(String text) {
   }
   return segments.isEmpty ? [_Segment(text)] : segments;
 }
-
-// ─────────────────────────────────────────────────────────────
-//  Token model
-// ─────────────────────────────────────────────────────────────
 
 enum _TokType { text, inlineMath, blockMath }
 
@@ -381,7 +434,6 @@ bool _isPunctuationOnly(_Line l) {
       RegExp(r'^[.,;:\s]+$').hasMatch(txt);
 }
 
-// FIX 3: بيشوف لو السطر بيبدأ بـ punctuation + نص (orphan sentence fragment)
 bool _isOrphanFragment(_Line l) {
   if (l.isEmpty) return false;
   final first = l.first;
@@ -404,7 +456,6 @@ List<_Line> _mergeOrphanedLines(List<_Line> lines) {
         i++;
         continue;
       }
-      // FIX: orphan math/punct/fragment → ضمّه للسابق
       if ((_isOrphanedMath(line) || _isPunctuationOnly(line) || _isOrphanFragment(line)) &&
           next.isNotEmpty &&
           !_isBlockMathLine(next.last)) {
@@ -413,7 +464,6 @@ List<_Line> _mergeOrphanedLines(List<_Line> lines) {
         i++;
         continue;
       }
-      // السطر الجاي orphan → ضمّه للحالي
       if (i + 1 < result.length &&
           !_isBlockMathLine(result[i + 1]) &&
           (_isOrphanedMath(result[i + 1]) ||
@@ -431,10 +481,6 @@ List<_Line> _mergeOrphanedLines(List<_Line> lines) {
   }
   return result;
 }
-
-// ─────────────────────────────────────────────────────────────
-//  RTL detector
-// ─────────────────────────────────────────────────────────────
 
 TextDirection _detectDirection(String text) {
   final clean = text
@@ -467,10 +513,6 @@ Widget _directedMarkdown(String data, MarkdownStyleSheet sheet) {
     ),
   );
 }
-
-// ─────────────────────────────────────────────────────────────
-//  MathMarkdown widget
-// ─────────────────────────────────────────────────────────────
 
 class MathMarkdown extends StatelessWidget {
   final String data;
@@ -619,45 +661,44 @@ class MathMarkdown extends StatelessWidget {
                 .map((t) => t.content)
                 .join(' ');
             final lineDir = _detectDirection(lineText);
+            // FIX: Wrap ينزل تحت (wrap) مش يسكرول أفقي
             return Padding(
               padding: const EdgeInsets.symmetric(vertical: 2),
               child: Directionality(
                 textDirection: lineDir,
-                // FIX 2: استخدم SingleChildScrollView للـ Wrap عشان نمنع overflow
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Wrap(
-                    textDirection: lineDir,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    runSpacing: 6,
-                    spacing: 4,
-                    children: line.map((tok) {
-                      if (tok.type == _TokType.inlineMath) {
-                        return _mathWidget(
-                            tok.content, MathStyle.text, baseStyle);
-                      }
-                      final cleaned =
-                          tok.content.replaceAll('\n', ' ').trim();
-                      if (cleaned.isEmpty) return const SizedBox.shrink();
-                      return Directionality(
-                        textDirection: _detectDirection(cleaned),
-                        child: MarkdownBody(
-                          data: cleaned,
-                          styleSheet: sheet,
-                          shrinkWrap: true,
-                          selectable: true,
-                          onTapLink: (text, href, title) async {
-                            if (href == null) return;
-                            final uri = Uri.tryParse(href);
-                            if (uri != null && await canLaunchUrl(uri)) {
-                              launchUrl(uri,
-                                  mode: LaunchMode.externalApplication);
-                            }
-                          },
-                        ),
-                      );
-                    }).toList(),
-                  ),
+                child: Wrap(
+                  textDirection: lineDir,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  runSpacing: 6,
+                  spacing: 4,
+                  children: line.map((tok) {
+                    if (tok.type == _TokType.inlineMath) {
+                      return _mathWidget(
+                          tok.content, MathStyle.text, baseStyle);
+                    }
+                    final cleaned =
+                        tok.content.replaceAll('\n', ' ').trim();
+                    if (cleaned.isEmpty) return const SizedBox.shrink();
+                    final tokDir = _detectDirection(cleaned);
+                    return Directionality(
+                      textDirection: tokDir,
+                      child: MarkdownBody(
+                        data: cleaned,
+                        styleSheet: sheet,
+                        shrinkWrap: true,
+                        softLineBreak: true,
+                        selectable: true,
+                        onTapLink: (text, href, title) async {
+                          if (href == null) return;
+                          final uri = Uri.tryParse(href);
+                          if (uri != null && await canLaunchUrl(uri)) {
+                            launchUrl(uri,
+                                mode: LaunchMode.externalApplication);
+                          }
+                        },
+                      ),
+                    );
+                  }).toList(),
                 ),
               ),
             );
@@ -688,10 +729,6 @@ class MathMarkdown extends StatelessWidget {
     }
   }
 }
-
-// ─────────────────────────────────────────────────────────────
-//  Code block widget
-// ─────────────────────────────────────────────────────────────
 
 class _CodeBlock extends StatefulWidget {
   final String code;
@@ -772,10 +809,6 @@ class _CodeBlockState extends State<_CodeBlock> {
   }
 }
 
-// ─────────────────────────────────────────────────────────────
-//  Block math widget with overflow protection
-// ─────────────────────────────────────────────────────────────
-
 class _BlockMathWidget extends StatelessWidget {
   final String latex;
   final TextStyle baseStyle;
@@ -824,3 +857,4 @@ class _BlockMathWidget extends StatelessWidget {
     );
   }
 }
+
