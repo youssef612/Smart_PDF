@@ -10,7 +10,7 @@ import '../services/api_service.dart';
 import '../services/history_store.dart';
 import 'widgets/pdf_export.dart';
 import 'widgets/word_export.dart';
-import 'widgets/math_markdown.dart';
+import 'widgets/math_markdown2.dart';
 import 'widgets/particles_painter.dart';
 import 'package:dio/dio.dart';
 import 'package:project_flutter/services/files_service.dart';

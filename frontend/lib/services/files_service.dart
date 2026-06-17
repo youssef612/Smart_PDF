@@ -24,7 +24,7 @@ class FilesService {
   // الحصول على ملف محدد
   Future<Map<String, dynamic>?> getFile(String fileId) async {
     try {
-      final response = await _apiService.dio.get('/files/$fileId');
+      final response = await _apiService.dio.get('/files/$fileId/details');
       if (response.data['success'] == true) {
         return response.data['data'];
       }
@@ -345,4 +345,5 @@ Future<List<Map<String, dynamic>>> getHistory() async {
       };
     }
   }
+
 }

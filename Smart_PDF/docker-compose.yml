@@ -1,0 +1,119 @@
+services:
+
+  # ── 1. MongoDB ───────────────────────────────────────────────
+  mongodb:
+    image: mongo:7
+    container_name: smartpdf_mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - smartpdf_net
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── 2. Backend (Laravel) ─────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: smartpdf_backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      DB_HOST: mongodb
+      MONGO_DB_HOST: mongodb
+      MONGO_DB_PORT: 27017
+      MONGO_DB_DATABASE: PDF_DB
+      DB_PORT: 27017
+      DB_DATABASE: PDF_DB
+      MARKER_URL: http://extractor:7070
+      MODEL_URL: http://model:8001
+      MAIL_MAILER: smtp
+      MAIL_HOST: smtp.gmail.com
+      MAIL_PORT: 587
+      MAIL_USERNAME: smartpdf8@gmail.com
+      MAIL_PASSWORD: necyjrfuvearkpgh
+      MAIL_ENCRYPTION: tls
+      MAIL_FROM_ADDRESS: smartpdf8@gmail.com
+      MAIL_FROM_NAME: SmartPDF
+      APP_KEY: "base64:fJ/RGzWIgtK0/uHBRfgm5yeibPr8fi91EdKaqhDmkTo="
+      JWT_SECRET: RJwz6cmlobrBkxHDEmZjZozTgrQGPznLtYsbWJmKIyQ6lDnHijVO4QDdu9fdFBgO
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - smartpdf_net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  # ── 3. LLaMA ─────────────────────────────────────────────────
+  llama:
+    image: ghcr.io/ggml-org/llama.cpp:server
+    container_name: smartpdf_llama
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./models:/models
+    command: >
+      -m /models/Qwen2.5-7B-Instruct.Q4_K_M.gguf
+      --host 0.0.0.0
+      --port 8080
+      -c 2048
+      -t 4
+    networks:
+      - smartpdf_net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+
+  # ── 4. Model Server ───────────────────────────────────────────
+  model:
+    build:
+      context: ./ai_servers
+      dockerfile: Dockerfile.model
+    container_name: smartpdf_model
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    environment:
+      LLAMA_URL: http://llama:8080
+    depends_on:
+      llama:
+        condition: service_healthy
+    networks:
+      - smartpdf_net
+
+  # ── 5. Extractor ──────────────────────────────────────────────
+  extractor:
+    build:
+      context: ./ai_servers
+      dockerfile: Dockerfile.extractor
+    container_name: smartpdf_extractor
+    restart: unless-stopped
+    ports:
+      - "7070:7070"
+    networks:
+      - smartpdf_net
+
+# ── Volumes ───────────────────────────────────────────────────
+volumes:
+  mongo_data:
+
+# ── Networks ──────────────────────────────────────────────────
+networks:
+  smartpdf_net:
+    driver: bridge

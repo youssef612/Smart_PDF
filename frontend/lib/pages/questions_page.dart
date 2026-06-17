@@ -9,7 +9,7 @@ import 'package:flutter/services.dart';
 import '../utils/responsive.dart';
 
 import 'package:flutter_markdown/flutter_markdown.dart';
-import 'widgets/math_markdown.dart';
+import 'widgets/math_markdown2.dart';
 import 'widgets/pdf_export.dart';
 import 'widgets/word_export.dart';
 import '../l10n/app_localizations.dart';
@@ -37,6 +37,105 @@ Color _difficultyColor(String rawDifficulty) {
   }
 }
 
+String _preprocessQuestionText(String text) {
+  // [fix] وصّل السطور المكسورة زي: e^{\n-x} أو g(x)=e^{\n-x}
+  text = text.replaceAllMapped(
+    RegExp(r'(\w\^\{[^}\n]*)\n([^}\n]*\})'),
+    (m) => '${m[1]}${m[2]}',
+  );
+  text = text.replaceAllMapped(
+    RegExp(r'(\\\w+\{[^}\n]*)\n([^}\n]*\})'),
+    (m) => '${m[1]}${m[2]}',
+  );
+
+  final lines  = text.split('\n');
+  final result = <String>[];
+  bool inFence = false;
+
+  for (final line in lines) {
+    final trimmed = line.trim();
+
+    if (trimmed.startsWith('```')) {
+      inFence = !inFence;
+      result.add(line);
+      continue;
+    }
+    if (inFence) { result.add(line); continue; }
+
+    // [fix] سطر بيبدأ بـ closing brace → وصّله بالسابق
+    if (RegExp(r'^-?[a-zA-Z0-9]\s*\}').hasMatch(trimmed) && result.isNotEmpty) {
+      for (int i = result.length - 1; i >= 0; i--) {
+        if (result[i].trim().isNotEmpty) {
+          result[i] = result[i].trimRight() + trimmed;
+          break;
+        }
+      }
+      continue;
+    }
+
+    // سطر فيه bare LaTeX خارج $ → لفّه في $$
+    final hasBareLatex = _hasBareLatexOutsideDelimiters(trimmed);
+    if (hasBareLatex && trimmed.isNotEmpty) {
+      final cleaned = _stripOrphanDollars(trimmed);
+      result.add('\$\$$cleaned\$\$');
+      continue;
+    }
+
+    // سطر فيه $ بالفعل وسليم → اتركه
+    if (trimmed.contains(r'$')) {
+      result.add(line);
+      continue;
+    }
+
+    // سطر فيه LaTeX commands بدون $ → لفّه في $$
+    final hasLatex = RegExp(
+      r'\\(?:phi|psi|int|frac|sqrt|sum|prod|lim|partial|'
+      r'lambda|mu|sigma|theta|pi|alpha|beta|gamma|delta|'
+      r'omega|nabla|infty|cdot|times|text|mathbf|vec|hat|'
+      r'left|right|begin|end)\b',
+    ).hasMatch(trimmed);
+
+    final isCodeLine = RegExp(
+      r'^\s*(?:def |class |import |function |const |let |var |'
+      r'#include|cout|printf|public |private )',
+    ).hasMatch(trimmed);
+
+    if (hasLatex && !isCodeLine && trimmed.isNotEmpty) {
+      result.add('\$\$$trimmed\$\$');
+      continue;
+    }
+
+    result.add(line);
+  }
+
+  return result.join('\n');
+}
+
+// ── helpers ──────────────────────────────────────────────────
+
+/// يشوف لو السطر فيه \command برة أي $ delimiter
+bool _hasBareLatexOutsideDelimiters(String line) {
+  // إزالة كل اللي جوه $...$ أو $$...$$
+  String stripped = line
+      .replaceAll(RegExp(r'\$\$[^$]*\$\$'), '')
+      .replaceAll(RegExp(r'\$[^$\n]*\$'), '');
+  // لو لسه فيه \command → فيه bare LaTeX
+  return RegExp(
+    r'\\(?:phi|psi|lambda|mu|sigma|theta|int|frac|sqrt|'
+    r'sum|partial|alpha|beta|gamma|delta|omega|cdot|times|'
+    r'left|right|infty|nabla|vec|hat|bar)\b'
+  ).hasMatch(stripped);
+}
+
+/// يشيل الـ $ المنفردة اللي مش بتعمل pair صح
+String _stripOrphanDollars(String line) {
+  // عد الـ $ — لو عددهم فردي → فيه orphan
+  // الحل: شيل كل $ منفردة (مش $$)
+  return line
+      .replaceAll(RegExp(r'(?<!\$)\$(?!\$)'), ' ')
+      .replaceAll(RegExp(r'\s{2,}'), ' ')
+      .trim();
+}
 Color _typeColor(String rawType) {
   switch (rawType.toLowerCase().trim()) {
     case 'multiple':
@@ -1144,6 +1243,9 @@ class _QuestionsPageState extends State<QuestionsPage>
           },
         );
         if (response.data['success'] == true) {
+          debugPrint('=== QUESTIONS RAW RESPONSE ===');
+          debugPrint(response.data.toString());
+          debugPrint('==============================');
           final raw = response.data['data']['questions'];
           if (raw is String && raw.trim().isNotEmpty) return raw;
         }
@@ -2382,7 +2484,149 @@ class _ExportOptionTile extends StatelessWidget {
     );
   }
 }
+// ─────────────────────────────────────────────────────────────
+//  _preprocessAnswerLatex — تلف الـ bare LaTeX في $$ قبل العرض
+// ─────────────────────────────────────────────────────────────
 
+String _splitCodeLine(String line) {
+  return line.replaceAllMapped(
+    RegExp(r'(\))\s+(print\s*\()'),
+    (m) => '${m[1]}\n${m[2]}',
+  ).replaceAllMapped(
+    RegExp(r'(\))\s+(print\s*\(\s*\))'),
+    (m) => '${m[1]}\n${m[2]}',
+  );
+}
+
+String _fixCodeFences(String text) {
+  final lines  = text.split('\n');
+  final result = <String>[];
+  bool inFence = false;
+
+  for (final line in lines) {
+    if (line.trim().startsWith('```')) {
+      inFence = !inFence;
+      result.add(line);
+      continue;
+    }
+    if (inFence) {
+      final fixed = _splitCodeLine(line);
+      result.addAll(fixed.split('\n'));
+    } else {
+      result.add(line);
+    }
+  }
+  return result.join('\n');
+}
+
+// ─────────────────────────────────────────────────────────────
+//  _preprocessAnswerLatex  [v23-fix]
+// ─────────────────────────────────────────────────────────────
+
+String _preprocessAnswerLatex(String text) {
+  // [fix] وصّل السطور المكسورة قبل أي معالجة
+  text = text.replaceAllMapped(
+    RegExp(r'(\w\^\{[^}\n]*)\n([^}\n]*\})'),
+    (m) => '${m[1]}${m[2]}',
+  );
+  text = text.replaceAllMapped(
+    RegExp(r'(\\\w+\{[^}\n]*)\n([^}\n]*\})'),
+    (m) => '${m[1]}${m[2]}',
+  );
+
+  final lines  = text.split('\n');
+  final result = <String>[];
+  bool inFence = false;
+
+  for (int i = 0; i < lines.length; i++) {
+    final line    = lines[i];
+    final trimmed = line.trim();
+
+    if (trimmed.startsWith('```')) {
+      inFence = !inFence;
+      result.add(line);
+      continue;
+    }
+    if (inFence) { result.add(line); continue; }
+
+    // سطر $ وحده أو $$ وحده → احذفه
+    if (trimmed == r'$' || trimmed == r'$$') continue;
+    if (RegExp(r'^\$\s*$').hasMatch(trimmed)) continue;
+
+    // [fix] سطر بيبدأ بـ -x} أو closing brace → وصّله بالسطر السابق
+    if (RegExp(r'^-?[a-zA-Z0-9]\s*\}').hasMatch(trimmed) && result.isNotEmpty) {
+      for (int j = result.length - 1; j >= 0; j--) {
+        if (result[j].trim().isNotEmpty) {
+          result[j] = result[j].trimRight() + trimmed;
+          break;
+        }
+      }
+      continue;
+    }
+
+    // [fix] سطر فيه $ مخلوط مع \command برا الـ $ → لفّ الكل في $$
+    if (trimmed.contains(r'$') && RegExp(r'\\[a-zA-Z]+').hasMatch(trimmed)) {
+      final hasBare = _hasBareLatexOutsideDelimiters(trimmed);
+      if (hasBare) {
+        final stripped = _stripOrphanDollars(trimmed);
+        if (stripped.isNotEmpty) {
+          result.add('\$\$$stripped\$\$');
+          continue;
+        }
+      }
+    }
+
+    // سطر بيبدأ بـ $ ويحتوي على LaTeX مخلوط
+    if (trimmed.startsWith(r'$') && !trimmed.startsWith(r'$$')) {
+      final inner = trimmed.replaceFirst(RegExp(r'^\$\s*'), '').trim();
+      if (inner.isNotEmpty && !inner.startsWith(r'$')) {
+        result.add('\$\$$inner\$\$');
+        continue;
+      }
+    }
+
+    if (trimmed.startsWith(r'$$') || trimmed.endsWith(r'$$')) {
+      result.add(line);
+      continue;
+    }
+
+    // سطر بيبدأ بـ = أو \ مباشرة → لفّه في $$
+    if ((trimmed.startsWith('=') || trimmed.startsWith(r'\')) &&
+        trimmed.isNotEmpty &&
+        !trimmed.contains(r'$')) {
+      result.add('\$\$$trimmed\$\$');
+      continue;
+    }
+
+    final hasLatexCmd = RegExp(
+      r'\\(?:phi|psi|chi|omega|alpha|beta|gamma|delta|'
+      r'lambda|mu|sigma|theta|pi|int|sum|frac|sqrt|left|right|'
+      r'implies|iff|forall|exists|nabla|partial|cdot|times|'
+      r'text|mathbf|mathrm|vec|hat|bar|dot|e)\b',
+    ).hasMatch(trimmed);
+
+    final alreadyWrapped = trimmed.contains(r'$');
+    final isCodeLine = RegExp(
+      r'^\s*(?:def |class |import |function |const |let |var |'
+      r'#include|cout|printf|public |private )',
+    ).hasMatch(trimmed);
+
+    final hasNormalText = RegExp(r'[A-Za-z\u0600-\u06FF]{5,}').hasMatch(trimmed);
+
+  if (hasLatexCmd && !alreadyWrapped && !isCodeLine 
+        && !hasNormalText   // ← الحاجة دي بس اللي ناقصة
+        && trimmed.isNotEmpty) {
+        result.add('\$\$$trimmed\$\$');
+        continue;
+    }
+
+    result.add(line);
+  }
+
+  return result.join('\n');
+}
+
+// ─────────────────────────────────────
 // ─────────────────────────────────────────────────────────────
 //  QuestionItem Widget
 // ─────────────────────────────────────────────────────────────
@@ -2511,7 +2755,7 @@ class _QuestionItemState extends State<QuestionItem> {
 
             // Question
             MathMarkdown(
-              data: widget.question,
+  data: widget.question,
               style: questionBodyStyle,
               styleSheet: MarkdownStyleSheet.fromTheme(
                 Theme.of(context),
@@ -2632,7 +2876,7 @@ class _QuestionItemState extends State<QuestionItem> {
                     ],
                   ),
                   child: MathMarkdown(
-                    data: widget.answer,
+  data: widget.answer,
                     style: answerBodyStyle,
                     styleSheet: MarkdownStyleSheet.fromTheme(
                       Theme.of(context),
@@ -2651,3 +2895,4 @@ class _QuestionItemState extends State<QuestionItem> {
     );
   }
 }
+

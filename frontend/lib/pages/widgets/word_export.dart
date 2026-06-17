@@ -174,9 +174,11 @@ class WordExporter {
       switch (block.type) {
 
         case _BType.heading:
+          final _hDir = _detectDir(block.content);
+          final _hJc  = _hDir == 'rtl' ? 'right' : 'left';
           buf.write(_para(
             runs: [_run(block.content, bold: true, size: fontSize + 4, color: '2E74B5')],
-            jc: jc, dir: dir, spaceBefore: 200, spaceAfter: 80,
+            jc: _hJc, dir: _hDir, spaceBefore: 200, spaceAfter: 80,
             borderBottom: 'BDD7EE',
           ));
 
@@ -197,10 +199,25 @@ class WordExporter {
           buf.write('<w:p><w:pPr>'
               '<w:jc w:val="$_bJc"/>'
               '<w:bidi w:val="${_bRtl ? 1 : 0}"/>'
-              '<w:spacing w:before="0" w:after="60"/>'
+              '<w:spacing w:before="0" w:after="80"/>'
               '<w:ind w:left="${_bRtl ? 0 : 360}" w:right="${_bRtl ? 360 : 0}"/>'
               '</w:pPr>'
               '${_run(_bRtl ? " •" : "• ", bold: true, size: fontSize, color: "4472C4")}'
+              '${_fmtRuns(block.content, fontSize, textColor).join()}'
+              '</w:p>\n');
+
+        case _BType.numbered:
+        // للـ numbered list نستخدم counter تلقائي مع تنسيق
+          final _nDir = _detectDir(block.content);
+          final _nJc  = _nDir == 'rtl' ? 'right' : 'left';
+          final _nRtl = _nDir == 'rtl';
+          // نحسب رقم العنصر من السياق — نستخدم bullet بشكل مرقم
+          buf.write('<w:p><w:pPr>'
+              '<w:jc w:val="$_nJc"/>'
+              '<w:bidi w:val="${_nRtl ? 1 : 0}"/>'
+              '<w:spacing w:before="0" w:after="80"/>'
+              '<w:ind w:left="${_nRtl ? 0 : 400}" w:right="${_nRtl ? 400 : 0}" w:hanging="400"/>'
+              '</w:pPr>'
               '${_fmtRuns(block.content, fontSize, textColor).join()}'
               '</w:p>\n');
 
@@ -211,15 +228,18 @@ class WordExporter {
               buf.write(_para(runs: [], jc: jc, dir: dir, spaceAfter: 80));
               continue;
             }
+            // كل سطر بيحدد اتجاهه لوحده بناءً على محتواه
+            final _lDir = _detectDir(t);
+            final _lJc  = _lDir == 'rtl' ? 'right' : 'left';
             final segs    = _parseInline(t);
             final hasMath = segs.any((s) => s.isMath);
             if (!hasMath) {
               buf.write(_para(
                 runs: _fmtRuns(t, fontSize, textColor),
-                jc: jc, dir: dir, spaceAfter: 60, shadingFill: shadingFill,
+                jc: _lJc, dir: _lDir, spaceAfter: 60, shadingFill: shadingFill,
               ));
             } else {
-              buf.write(_mixedPara(segs: segs, jc: jc, dir: dir,
+              buf.write(_mixedPara(segs: segs, jc: _lJc, dir: _lDir,
                   fontSize: fontSize, color: textColor, shadingFill: shadingFill));
             }
           }
@@ -931,7 +951,7 @@ class WordExporter {
     // Convert markdown links [label](url) → label (url)
     text = text.replaceAllMapped(
       RegExp(r'\[([^\]]+)\]\(([^)]+)\)'),
-      (m) => '\${m[1]} (\${m[2]})',
+          (m) => '\${m[1]} (\${m[2]})',
     );
     final runs = <String>[];
     final re   = RegExp(r'\*\*(.+?)\*\*|\*(.+?)\*|`([^`]+)`');
@@ -1034,13 +1054,29 @@ class WordExporter {
         li++; continue;
       }
 
+      // ── bullet list item: - or * or • ────────────────────────────────
+      final bm = RegExp(r'^[-*•]\s+(.+)$').firstMatch(trimmed);
+      if (bm != null) {
+        blocks.add(_Block(_BType.bullet, bm.group(1)!.trim()));
+        li++; continue;
+      }
+
+      // ── numbered list item: 1. or 1) ─────────────────────────────────
+      final nm = RegExp(r'^\d+[.)]\s+(.+)$').firstMatch(trimmed);
+      if (nm != null) {
+        blocks.add(_Block(_BType.numbered, nm.group(1)!.trim()));
+        li++; continue;
+      }
+
       // ── text block ───────────────────────────────────────────────────
       final tl = <String>[];
       while (li < lines.length) {
         final t = lines[li].trim();
         if (t.startsWith('```')  || t.startsWith(r'$$') ||
             t.startsWith(r'\[') || RegExp(r'^#{1,6}\s').hasMatch(t) ||
-            RegExp(r'^\*\*[^*]+\*\*$').hasMatch(t)) break;
+            RegExp(r'^\*\*[^*]+\*\*$').hasMatch(t) ||
+            RegExp(r'^[-*•]\s+').hasMatch(t) ||
+            RegExp(r'^\d+[.)]\s+').hasMatch(t)) break;
         tl.add(lines[li]); li++;
       }
       if (tl.isNotEmpty) blocks.add(_Block(_BType.text, tl.join('\n')));
@@ -1131,7 +1167,7 @@ class WordExporter {
 //  Data classes
 // ════════════════════════════════════════════════════════════════════════════
 
-enum _BType { heading, code, blockMath, bullet, text }
+enum _BType { heading, code, blockMath, bullet, numbered, text }
 
 class _Block {
   final _BType type;

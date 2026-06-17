@@ -14,8 +14,8 @@ use Illuminate\Validation\Rule;
 
 class FilesController extends Controller
 {
-const MARKER_URL = 'https://catapult-pang-rival.ngrok-free.dev';
-const MODEL_URL  = 'https://unsuppressive-rosily-shon.ngrok-free.dev';
+const MARKER_URL = 'http://extractor:7070';
+const MODEL_URL  = 'https://nuttiness-reattach-each.ngrok-free.dev';
     const NGROK_HEADERS = [
         'ngrok-skip-browser-warning' => 'true',
         'Accept'                     => 'application/json',
@@ -140,7 +140,6 @@ const MODEL_URL  = 'https://unsuppressive-rosily-shon.ngrok-free.dev';
                 return response()->json([
                     'success' => false,  // ✅ غيّر
                     'message' => 'File saved but extraction failed',
-                    'data'    => $this->formatFile($savedFile->fresh()),
                     'has_text' => false,
                 ], 422);
             }
@@ -165,7 +164,6 @@ const MODEL_URL  = 'https://unsuppressive-rosily-shon.ngrok-free.dev';
                 return response()->json([
                     'success' => true,
                     'message' => 'File uploaded successfully',
-                    'data'    => $this->formatFile($savedFile->fresh()),
                     'has_text' => true,
                 ], 200);
             }
@@ -176,7 +174,6 @@ const MODEL_URL  = 'https://unsuppressive-rosily-shon.ngrok-free.dev';
                 return response()->json([
                     'success' => true,
                     'message' => 'File uploaded, extraction in progress',
-                    'data'    => $this->formatFile($savedFile->fresh()),
                     'has_text' => false,
                 ], 200);
             }
@@ -186,7 +183,6 @@ const MODEL_URL  = 'https://unsuppressive-rosily-shon.ngrok-free.dev';
             return response()->json([
                 'success' => false,  // ✅ غيّر
                 'message' => 'File saved but no job ID returned',
-                'data'    => $this->formatFile($savedFile->fresh()),
                 'has_text' => false,
             ], 422);
 
@@ -197,7 +193,6 @@ const MODEL_URL  = 'https://unsuppressive-rosily-shon.ngrok-free.dev';
             return response()->json([
                 'success' => false,  // ✅ غيّر
                 'message' => 'File saved but extraction failed',
-                'data'    => $this->formatFile($savedFile->fresh()),
                 'has_text' => false,
             ], 500);
         }
@@ -579,6 +574,244 @@ const MODEL_URL  = 'https://unsuppressive-rosily-shon.ngrok-free.dev';
         ]);
     }
 
+    // ────────────────────────────────────────────────────────
+    //  POST /files/{id}/exam-questions (الميثود الخاصة بالامتحان باسمها الجديد)
+    // ────────────────────────────────────────────────────────
+    public function examQuestions(Request $request, $id)
+    {
+        set_time_limit(0);
+
+        $codeSubTypes = [
+            'code_output', 'code_write', 'code_debug', 'code_explain',
+            'code_complete', 'code_complexity', 'code_concept',
+            'code_tracing', 'code_convert', 'sql_query',
+        ];
+
+        // 1. التحقق من المدخلات (Validation) القادمة من صفحة الامتحان بالفلاتر
+        $validated = $request->validate([
+            'type' => ['required', Rule::in(array_merge([
+                'multiple_choice', 'true_false', 'short_answer', 'essay',
+                'fill_blank', 'matching', 'ordering', 'definition',
+                'diagram', 'calculation', 'compare', 'case_study', 'code',
+            ], $codeSubTypes))],
+            'difficulty'       => ['required', Rule::in(['easy', 'medium', 'hard'])],
+            'count'            => ['required', 'integer', 'min:1', 'max:50'],
+            'force_regenerate' => ['sometimes', 'boolean'],
+            'from_page'        => ['sometimes', 'nullable', 'integer', 'min:1'],
+            'to_page'          => ['sometimes', 'nullable', 'integer', 'min:1', 'gte:from_page'],
+        ]);
+
+        $rawType    = $validated['type'];
+        $type       = in_array($rawType, $codeSubTypes) ? 'code' : $rawType;
+        $difficulty = $validated['difficulty'];
+        $count      = (int) $validated['count'];
+
+        $fromPage = $request->input('from_page');
+        $toPage   = $request->input('to_page');
+
+        $file = $this->findFileOrFail($id);
+        if (!$file) {
+            return response()->json(['success' => false, 'message' => 'File not found or unauthorized'], 404);
+        }
+
+        // تحديد مصدر النصوص المقسمة
+        $sourceData = !empty($file->pages) ? $file->pages : $file->extracted_text;
+        if (empty($sourceData)) {
+            return response()->json(['success' => false, 'message' => 'No text extracted yet.'], 422);
+        }
+
+        // استخراج نطاق الصفحات بذكاء
+        $rawText = $this->extractPageRange($sourceData, $fromPage, $toPage);
+        if (empty(trim($rawText))) {
+            return response()->json(['success' => false, 'message' => 'No extractable text found in this file.'], 422);
+        }
+
+        $cleanText = $this->cleanText($rawText);
+        if (empty(trim($cleanText))) {
+            return response()->json(['success' => false, 'message' => 'Text could not be cleaned for processing.'], 422);
+        }
+
+        $lang    = $this->detectLanguage($cleanText);
+        $textLen = mb_strlen($cleanText);
+
+        // تقطيع النصوص وحساب الـ Budget والـ Density الخاص بالسيرفر
+        $chunkSize = $this->dynamicChunkSize($textLen, $count);
+        $rawChunks = array_values(array_filter(
+            $this->chunkText($cleanText, $chunkSize),
+            fn($c) => !$this->isUselessChunk($c)
+        ));
+        $totalChunks = count($rawChunks);
+
+        if ($totalChunks === 0) {
+            return response()->json(['success' => false, 'message' => 'No usable text chunks to process.'], 422);
+        }
+
+        $chunkMeta = [];
+        foreach ($rawChunks as $i => $chunk) {
+            $chunkMeta[$i] = [
+                'examples' => $this->countSolvedExamples($chunk),
+                'density'  => $this->contentDensity($chunk),
+                'len'      => mb_strlen($chunk),
+            ];
+        }
+
+        $budgets = $this->redistributeBudget($count, $chunkMeta, $totalChunks);
+
+        $allChunks = [];
+        foreach ($rawChunks as $i => $chunk) {
+            $allChunks[$i] = $i > 0
+                ? mb_substr($rawChunks[$i - 1], -500) . "\n\n" . $chunk
+                : $chunk;
+        }
+
+        $questionsArray = [];
+        $seenHashes     = [];
+        $maxRounds      = 5;
+        $round          = 0;
+        $usedSeeds      = [];
+        $timestamp      = now()->timestamp;
+        $shortageReason = null;
+
+        // الدوران على الـ Chunks وتوليد الأسئلة عبر الـ Model الفعلي
+        while (count($questionsArray) < $count && $round < $maxRounds) {
+            $round++;
+            $stillNeeded   = $count - count($questionsArray);
+            $remainBudgets = $round === 1
+                ? $budgets
+                : $this->redistributeBudget($stillNeeded, $chunkMeta, $totalChunks);
+
+            foreach ($allChunks as $chunkIndex => $chunk) {
+                if (count($questionsArray) >= $count) break;
+
+                $chunkBudget = $remainBudgets[$chunkIndex] ?? 0;
+                if ($chunkBudget <= 0) continue;
+
+                $requestedBatch      = min($chunkBudget, self::QUESTIONS_PER_CHUNK_MAX);
+                $meta                = $chunkMeta[$chunkIndex];
+                $lastRawPartForChunk = null;
+
+                do { $seed = rand(1, 999999); } while (in_array($seed, $usedSeeds));
+                $usedSeeds[] = $seed;
+
+                $prompt = $this->prompt('questions', [
+                    'text'            => $chunk,
+                    'count'           => $requestedBatch,
+                    'type'            => $type,
+                    'difficulty'      => $difficulty,
+                    'chunk_index'     => $chunkIndex + 1,
+                    'total_chunks'    => $totalChunks,
+                    'seed'            => $seed,
+                    'timestamp'       => $timestamp,
+                    'language'        => $lang,
+                    'solved_examples' => $meta['examples'],
+                    'content_type'    => $meta['examples'] > 0 ? 'has_solved_examples' : 'theory_only',
+                ]);
+
+                $temperature = min(0.3 + ($round * 0.05), 0.7);
+                $part        = $this->callModelWithRetry($prompt, 'qa', $temperature);
+                if ($part === null) continue;
+
+                $part = $this->normalizeToMarkdown($part);
+                if (!preg_match('/##\s*Question\s*\d+/i', $part)) continue;
+
+                if ($lastRawPartForChunk !== null) {
+                    similar_text($lastRawPartForChunk, $part, $pct);
+                    if ($pct > 92) continue;
+                }
+                $lastRawPartForChunk = $part;
+
+                $part         = trim(preg_replace('/^.*?(##\s*Question\s*\d+)/is', '$1', $part));
+                $newQuestions = $this->splitIntoIndividualQuestions($part);
+
+                foreach ($newQuestions as $q) {
+                    if (count($questionsArray) >= $count) break;
+                    $hash = md5(preg_replace('/\s+/', ' ', strtolower(strip_tags($q))));
+                    if (isset($seenHashes[$hash])) continue;
+                    $seenHashes[$hash] = true;
+                    $questionsArray[]  = $q;
+                }
+            }
+        }
+
+        // Completion Pass لضمان تغطية العدد بالكامل
+        if (count($questionsArray) < $count) {
+            $stillNeeded  = $count - count($questionsArray);
+            $densities    = array_column($chunkMeta, 'density');
+            $richestIdx   = array_keys($densities, max($densities))[0] ?? 0;
+            $richestChunk = $allChunks[$richestIdx];
+            $meta         = $chunkMeta[$richestIdx];
+
+            do { $seed = rand(1, 999999); } while (in_array($seed, $usedSeeds));
+            $batchSize = min($stillNeeded + 1, self::QUESTIONS_PER_CHUNK_MAX);
+
+            $completionPrompt = $this->prompt('questions', [
+                'text'            => $richestChunk,
+                'count'           => $batchSize,
+                'type'            => $type,
+                'difficulty'      => $difficulty,
+                'chunk_index'     => 1,
+                'total_chunks'    => 1,
+                'seed'            => $seed,
+                'timestamp'       => $timestamp . '_completion',
+                'language'        => $lang,
+                'solved_examples' => $meta['examples'],
+                'content_type'    => $meta['examples'] > 0 ? 'has_solved_examples' : 'theory_only',
+            ]);
+
+            $part = $this->callModelWithRetry($completionPrompt, 'qa', 0.6);
+            if ($part !== null) {
+                $part         = $this->normalizeToMarkdown($part);
+                $part         = trim(preg_replace('/^.*?(##\s*Question\s*\d+)/is', '$1', $part));
+                $newQuestions = $this->splitIntoIndividualQuestions($part);
+                foreach ($newQuestions as $q) {
+                    if (count($questionsArray) >= $count) break;
+                    $hash = md5(preg_replace('/\s+/', ' ', strtolower(strip_tags($q))));
+                    if (isset($seenHashes[$hash])) continue;
+                    $seenHashes[$hash] = true;
+                    $questionsArray[]  = $q;
+                }
+            }
+        }
+
+        if (empty($questionsArray)) {
+            return response()->json(['success' => false, 'message' => 'Model failed to generate exam questions.'], 500);
+        }
+
+        $questionsArray = array_slice($questionsArray, 0, $count);
+        $questionsArray = array_map(fn($seg) => trim(preg_replace('/##QSEP##/i', '', $seg)), $questionsArray);
+        $questionsArray = array_map(function ($seg, $idx) {
+            return preg_replace('/##\s*Question\s*\d+/i', '## Question ' . ($idx + 1), $seg, 1);
+        }, $questionsArray, array_keys($questionsArray));
+
+        $content     = trim(implode("\n\n##QSEP##\n\n", $questionsArray));
+        $actualCount = count($questionsArray);
+
+        if ($actualCount < $count) {
+            $shortageReason = "Model could only generate {$actualCount} unique questions from the available content.";
+        }
+
+        // 💾 حفظ الداتا في جدول الـ Questions علشان تكون مرجعية لصفحة الامتحان برضه
+        Question::create([
+            'user_id'    => (string) auth()->id(),
+            'file_id'    => (string) $file->id,
+            'question'   => $content,
+            'type'       => $rawType,
+            'difficulty' => $difficulty,
+            'count'      => $actualCount,
+        ]);
+
+        // 📦 الرد الـ JSON المتناسق تماماً مع اللي الفلاتر مستنيه وحل مشكلة الـ 404
+        return response()->json([
+            'success' => true,
+            'data'    => array_filter([
+                'questions'       => $content,
+                'requested_count' => $count,
+                'actual_count'    => $actualCount,
+                'shortage_reason' => $shortageReason,
+            ]),
+        ]);
+    }
+    
     // ────────────────────────────────────────────────────────
     //  POST /files/{id}/explain
     // ────────────────────────────────────────────────────────
@@ -1604,8 +1837,14 @@ B) $\phi(x) = \lambda \int_0^x K(x,t)\phi(t)\,dt$
 C) $f(x) = \int_a^b K(x,t)\,dt$
 D) $\phi(x) = f(x) - \lambda K(x,t)$
 
-**Answer:** A) The second kind includes $\phi(x)$ on both sides; $a,b$ are fixed constants distinguishing it from Volterra.
+**Answer:** A) The second kind includes $\phi(x)$ on both sides with fixed limits $a$ and $b$, distinguishing it from Volterra equations where the upper limit is $x$.
 ##QSEP##
+
+CRITICAL MATH RULE: Every variable or expression in prose text MUST be in $...$
+✅ "...the kernel $K(x,t)$ is symmetric."
+✅ "...where $f(x) \\neq 0$, the equation is inhomogeneous."
+❌ NEVER let a variable appear alone on its own line outside $...$
+❌ NEVER use \\( \\) or \\[ \\] delimiters — ONLY $ and $$
 EX,
 
             'true_false' => <<<'EX'
@@ -1851,10 +2090,19 @@ EX,
             'multiple_choice' => <<<'INST'
 TYPE RULES — multiple_choice:
 - One clear question from the source text
-- Exactly 4 options: A) B) C) D)
+- Exactly 4 options: A) B) C) D) — each on its OWN line
 - Only ONE correct answer — others must be plausible but wrong
-- Use LaTeX for all math
-- Answer: correct letter + one-line justification
+- Use LaTeX for ALL math: inline $x$ for variables, $$expr$$ for block
+- CRITICAL: Every math variable or symbol in prose MUST be in $...$
+  ✅ CORRECT: "...depends on $K(x,t)$."
+  ❌ WRONG:   "...depends on
+K(x,t)."
+  ✅ CORRECT: "...where $f(x) \neq 0$."
+  ❌ WRONG:   "...
+\phi(x)) as the kernel..."
+- NEVER split a sentence so that a math variable appears on its own line
+- Answer: correct letter + 2-3 sentence justification, all math in $...$
+- NEVER use \( \) or \[ \] — ONLY $ and $$
 INST,
 
             'true_false' => <<<'INST'
@@ -1877,12 +2125,17 @@ TYPE RULES — short_answer:
 - One focused question requiring 2-4 sentence answer
 - Answer must use LaTeX for math
 - No yes/no questions — require explanation
+- CRITICAL: Every math variable or symbol in prose MUST be in $...$
+- NEVER split a sentence so that a variable appears alone on its own line
+- NEVER use \( \) or \[ \] — ONLY $ and $$
 INST,
 
             'essay' => <<<'INST'
 TYPE RULES — essay:
 - One deep derivation or analysis question
 - Answer: bullet list of ALL key points with expected LaTeX expressions
+- CRITICAL: Every math variable or symbol in prose MUST be in $...$
+- NEVER use \( \) or \[ \] — ONLY $ and $$
 INST,
 
             'fill_blank' => <<<'INST'
